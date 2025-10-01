@@ -1,2 +1,2 @@
-# ghl-clover-integration
+# clover-integration
 custom app for clover and GHL
