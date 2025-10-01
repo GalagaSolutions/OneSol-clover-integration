@@ -1,0 +1,7 @@
+{
+  "rewrites": [
+    { "source": "/oauth/callback", "destination": "/api/oauth/callback" },
+    { "source": "/pay/clover", "destination": "/api/pay/clover" },
+    { "source": "/clover/charge", "destination": "/api/clover/charge" }
+  ]
+}
