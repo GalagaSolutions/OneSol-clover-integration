@@ -1,92 +1,76 @@
 // api/oauth/callback.js
 import axios from "axios";
 
-/**
- * Exchanges GHL ?code= for access/refresh tokens.
- * Make sure these env vars (Production) are set & correct:
- * - GHL_CLIENT_ID
- * - GHL_CLIENT_SECRET  (ROTATED, current)
- * - OAUTH_REDIRECT_URI (must EXACTLY match your Redirect URL in GHL + the install link)
- *
- * Also: add the SAME redirect to GHL App Builder → OAuth → Redirect URLs.
- */
-
-const TOKEN_URL = "https://services.leadconnectorhq.com/oauth/token";
-
-async function exchangeAsJson({ code, redirectUri }) {
-  const payload = {
-    client_id: process.env.GHL_CLIENT_ID,
-    client_secret: process.env.GHL_CLIENT_SECRET,
-    grant_type: "authorization_code",
-    code,
-    // Docs show user_type in sample; "Company" works for agency/sub-account installs.
-    user_type: "Company",
-    redirect_uri: redirectUri,
-  };
-  return axios.post(TOKEN_URL, payload, {
-    headers: {
-      Accept: "application/json",
-      "Content-Type": "application/json",
-    },
-    timeout: 20000,
-  });
-}
-
-async function exchangeAsForm({ code, redirectUri }) {
-  const body = new URLSearchParams({
-    client_id: process.env.GHL_CLIENT_ID,
-    client_secret: process.env.GHL_CLIENT_SECRET,
-    grant_type: "authorization_code",
-    code,
-    user_type: "Company",
-    redirect_uri: redirectUri,
-  });
-  return axios.post(TOKEN_URL, body.toString(), {
-    headers: {
-      Accept: "application/json",
-      "Content-Type": "application/x-www-form-urlencoded",
-    },
-    timeout: 20000,
-  });
-}
-
 export default async function handler(req, res) {
   try {
-    if (req.method !== "GET") {
-      res.setHeader("Allow", "GET");
-      return res.status(405).send("Method Not Allowed");
-    }
-
-    const { code, error, error_description } = req.query || {};
-    if (error) return res.status(400).send(`OAuth error: ${error_description || error}`);
+    const { code, locationId: locId } = req.query;
     if (!code) return res.status(400).send("Missing ?code");
 
     const redirectUri = process.env.OAUTH_REDIRECT_URI;
+    const clientId = process.env.GHL_CLIENT_ID;
+    const clientSecret = process.env.GHL_CLIENT_SECRET;
+    const userType = "Location"; // we want a location-scoped token
 
-    // Try JSON first (matches current docs); if it fails, try form-encoded.
-    let resp;
-    try {
-      resp = await exchangeAsJson({ code, redirectUri });
-    } catch (e) {
-      // Log concise error, then fall back.
-      console.error("Token JSON exchange failed:", e?.response?.status, e?.response?.data || e.message);
-      resp = await exchangeAsForm({ code, redirectUri });
+    const tokenUrl = "https://services.leadconnectorhq.com/oauth/token";
+
+    async function exchangeJson() {
+      return axios.post(
+        tokenUrl,
+        {
+          client_id: clientId,
+          client_secret: clientSecret,
+          grant_type: "authorization_code",
+          code,
+          user_type: userType,
+          redirect_uri: redirectUri,
+        },
+        { headers: { "Content-Type": "application/json" } }
+      );
     }
 
-    const data = resp?.data || {};
-    const locId = data.locationId || data.location_id; // sometimes snake vs camel
-    const userType = data.userType || data.user_type;
+    async function exchangeForm() {
+      const params = new URLSearchParams();
+      params.set("client_id", clientId);
+      params.set("client_secret", clientSecret);
+      params.set("grant_type", "authorization_code");
+      params.set("code", code);
+      params.set("user_type", userType);
+      params.set("redirect_uri", redirectUri);
+      return axios.post(tokenUrl, params.toString(), {
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      });
+    }
 
-    // TODO: persist tokens keyed by locId (or companyId) in your DB/KV
-    console.log("Connected location:", locId, "userType:", userType);
-    console.log("Access token (last6):", (data.access_token || "").slice(-6));
+    let data;
+    try {
+      const r = await exchangeJson();
+      data = r.data;
+    } catch (err) {
+      console.log("Token JSON exchange failed:", err.response?.status, err.response?.data);
+      const r2 = await exchangeForm();
+      data = r2.data;
+    }
 
-    return res
-      .status(200)
-      .send("Sunflower Casita connected 🎉 You can close this tab.");
+    // Log the tokens once so you can copy them for provider registration.
+    console.log(
+      "OAUTH_RESULT",
+      JSON.stringify(
+        {
+          locationId: locId || "(not provided)",
+          userType,
+          scope: data.scope,
+          access_token: data.access_token,
+          refresh_token: data.refresh_token,
+          expires_in: data.expires_in,
+        },
+        null,
+        2
+      )
+    );
+
+    res.status(200).send("Sunflower Casita connected 🎉 You can close this tab.");
   } catch (e) {
-    // Print exact API error for quick debugging in Vercel logs
-    console.error("OAuth exchange failed:", e?.response?.status, e?.response?.data || e.message);
-    return res.status(500).send("OAuth exchange failed");
+    console.error("OAuth exchange failed", e.response?.status, e.response?.data || e.message);
+    res.status(500).send("OAuth exchange failed");
   }
 }
