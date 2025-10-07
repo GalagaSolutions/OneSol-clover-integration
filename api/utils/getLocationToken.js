@@ -2,7 +2,7 @@ import axios from "axios";
 import { Redis } from "@upstash/redis";
 
 const redis = new Redis({
-  url: process.env.storage_REDIS_URL,
+  url: process.env.storage_KV_REST_API_URL,
   token: process.env.storage_KV_REST_API_TOKEN,
 });
 

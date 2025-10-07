@@ -3,7 +3,7 @@ import { Redis } from "@upstash/redis";
 
 // Initialize Redis with your Vercel environment variables
 const redis = new Redis({
-  url: process.env.storage_REDIS_URL,
+  url: process.env.storage_KV_REST_API_URL,
   token: process.env.storage_KV_REST_API_TOKEN,
 });
 
