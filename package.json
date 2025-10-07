@@ -1,10 +1,9 @@
 {
-  "name": "ghl-clover-integration",
+  "name": "onesol-clover-integration",
   "version": "1.0.0",
   "type": "module",
-  "private": true,
   "dependencies": {
-    "@upstash/redis": "^1.35.5",
-    "axios": "^1.7.2"
+    "axios": "^1.6.0",
+    "@upstash/redis": "^1.28.0"
   }
 }
