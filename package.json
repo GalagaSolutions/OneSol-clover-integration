@@ -4,6 +4,7 @@
   "type": "module",
   "private": true,
   "dependencies": {
+    "@upstash/redis": "^1.35.5",
     "axios": "^1.7.2"
   }
 }
