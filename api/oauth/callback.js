@@ -1,7 +1,6 @@
 import axios from "axios";
 import { Redis } from "@upstash/redis";
 
-// Initialize Redis with your Vercel environment variables
 const redis = new Redis({
   url: process.env.storage_KV_REST_API_URL,
   token: process.env.storage_KV_REST_API_TOKEN,
@@ -21,12 +20,19 @@ export default async function handler(req, res) {
     // Exchange code for tokens
     const tokenData = await exchangeCodeForToken(code);
     
+    // Extract location ID - try multiple possible locations in response
+    const locationId = tokenData.locationId || tokenData.location_id;
+    const companyId = tokenData.companyId || tokenData.company_id;
+    
+    if (!locationId) {
+      console.error("❌ No locationId found in token response:", tokenData);
+      throw new Error("locationId not found in OAuth response");
+    }
+
     const {
       access_token,
       refresh_token,
       expires_in,
-      locationId,
-      companyId,
       scope,
     } = tokenData;
 
@@ -40,8 +46,9 @@ export default async function handler(req, res) {
       accessToken: access_token,
       refreshToken: refresh_token,
       expiresAt: Date.now() + expires_in * 1000,
-      companyId,
-      scope,
+      companyId: companyId,
+      locationId: locationId, // Store it explicitly
+      scope: scope,
       installedAt: new Date().toISOString(),
     });
 
@@ -79,7 +86,7 @@ async function exchangeCodeForToken(code) {
   };
 
   try {
-    // Try JSON first (recommended by GHL)
+    // Try JSON first
     const response = await axios.post(tokenUrl, payload, {
       headers: { "Content-Type": "application/json" },
     });
@@ -105,13 +112,17 @@ async function storeLocationTokens(locationId, tokenData) {
 }
 
 async function registerPaymentProvider(locationId, accessToken) {
-  // This API call makes your payment provider appear in the location's payment integrations
+  // This makes your payment provider appear in the location
   const registerUrl = "https://services.leadconnectorhq.com/payments/custom-provider/connect";
   
   const payload = {
     locationId: locationId,
-    liveMode: false, // Set to true for production
+    liveMode: false,
   };
+
+  console.log("📤 Attempting to register payment provider");
+  console.log("   Location ID:", locationId);
+  console.log("   Payload:", JSON.stringify(payload));
 
   const response = await axios.post(registerUrl, payload, {
     headers: {
