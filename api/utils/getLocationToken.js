@@ -8,21 +8,22 @@ const redis = new Redis({
 
 export async function getLocationToken(locationId) {
   const key = `ghl_location_${locationId}`;
-  const tokenDataStr = await redis.get(key);
+  const tokenData = await redis.get(key);
 
-  if (!tokenDataStr) {
+  if (!tokenData) {
     throw new Error(`No tokens found for location: ${locationId}`);
   }
 
-  const tokenData = JSON.parse(tokenDataStr);
+  // Check if tokenData is already an object or needs parsing
+  const parsedData = typeof tokenData === 'string' ? JSON.parse(tokenData) : tokenData;
 
   // Check if token is expired
-  if (Date.now() >= tokenData.expiresAt) {
+  if (Date.now() >= parsedData.expiresAt) {
     console.log("🔄 Token expired, refreshing...");
-    return await refreshLocationToken(locationId, tokenData);
+    return await refreshLocationToken(locationId, parsedData);
   }
 
-  return tokenData.accessToken;
+  return parsedData.accessToken;
 }
 
 async function refreshLocationToken(locationId, tokenData) {
