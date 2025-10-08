@@ -1,4 +1,5 @@
-<!DOCTYPE html>
+export default function handler(req, res) {
+  const html = `<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -35,12 +36,6 @@
             margin-bottom: 30px;
         }
         
-        .logo img {
-            width: 80px;
-            height: 80px;
-            border-radius: 50%;
-        }
-        
         h1 {
             text-align: center;
             color: #333;
@@ -67,7 +62,7 @@
             font-size: 14px;
         }
         
-        input, select {
+        input {
             width: 100%;
             padding: 12px;
             border: 2px solid #e0e0e0;
@@ -76,7 +71,7 @@
             transition: border-color 0.3s;
         }
         
-        input:focus, select:focus {
+        input:focus {
             outline: none;
             border-color: #667eea;
         }
@@ -172,9 +167,10 @@
 <body>
     <div class="container">
         <div class="logo">
-            <img src="https://raw.githubusercontent.com/GalagaSolutions/OneSol-clover-integration/main/clover-logo.png" 
-                 alt="Clover Logo" 
-                 onerror="this.src='data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22%3E%3Ccircle cx=%2250%22 cy=%2250%22 r=%2240%22 fill=%22%23FF6B35%22/%3E%3C/svg%3E'">
+            <svg width="80" height="80" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+                <circle cx="50" cy="50" r="45" fill="#FF6B35"/>
+                <path d="M30 50 L45 65 L70 35" stroke="white" stroke-width="8" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
         </div>
         
         <h1>Clover Setup</h1>
@@ -212,14 +208,12 @@
     </div>
     
     <script>
-        // Get URL parameters (GHL passes locationId, companyId, etc.)
         const urlParams = new URLSearchParams(window.location.search);
         const locationId = urlParams.get('location_id') || urlParams.get('locationId');
         const companyId = urlParams.get('company_id') || urlParams.get('companyId');
         
         let currentMode = 'test';
         
-        // Mode toggle
         document.querySelectorAll('.mode-btn').forEach(btn => {
             btn.addEventListener('click', function() {
                 document.querySelectorAll('.mode-btn').forEach(b => b.classList.remove('active'));
@@ -228,7 +222,6 @@
             });
         });
         
-        // Form submission
         document.getElementById('setupForm').addEventListener('submit', async function(e) {
             e.preventDefault();
             
@@ -265,10 +258,8 @@
                 if (response.ok && result.success) {
                     showMessage('success', '✓ Configuration saved successfully! Clover is now connected.');
                     
-                    // Redirect to GHL after 2 seconds
                     setTimeout(() => {
                         if (window.parent && window.parent !== window) {
-                            // In iframe - send message to parent
                             window.parent.postMessage({ type: 'SETUP_COMPLETE' }, '*');
                         }
                     }, 2000);
@@ -286,7 +277,7 @@
         
         function showMessage(type, text) {
             const messageDiv = document.getElementById('message');
-            messageDiv.className = `message ${type}`;
+            messageDiv.className = \`message \${type}\`;
             messageDiv.textContent = text;
             messageDiv.style.display = 'block';
             
@@ -297,10 +288,13 @@
             }
         }
         
-        // Show location ID if available (for debugging)
         if (!locationId) {
             showMessage('error', 'Warning: No location ID detected. Make sure you access this page from the GHL app.');
         }
     </script>
 </body>
-</html>
+</html>`;
+
+  res.setHeader('Content-Type', 'text/html');
+  res.status(200).send(html);
+}
