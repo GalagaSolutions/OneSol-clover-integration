@@ -1,4 +1,19 @@
 export default function handler(req, res) {
+  // Clover connection test
+  if (req.query.test === "clover") {
+    const merchantId = process.env.CLOVER_MERCHANT_ID;
+    const apiToken = process.env.CLOVER_API_TOKEN;
+    const environment = process.env.CLOVER_ENVIRONMENT;
+
+    return res.status(200).json({
+      connected: !!(merchantId && apiToken && environment),
+      merchantId: merchantId ? `${merchantId.substring(0, 4)}...` : "NOT SET",
+      hasApiToken: !!apiToken,
+      environment: environment || "NOT SET",
+    });
+  }
+
+  // Rest of the existing setup page code...
   const html = `<!DOCTYPE html>
 <html lang="en">
 <head>
