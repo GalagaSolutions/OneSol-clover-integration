@@ -1,5 +1,12 @@
+// api/payment-form.js - FIXED VERSION
 export default function handler(req, res) {
-  const { amount = '0.00', invoiceId = '', locationId = 'cv3mmKLIVdqbZSVeksCW', customerEmail = '', customerName = '' } = req.query;
+  const { 
+    amount = '0.00', 
+    invoiceId = '', 
+    locationId = '', 
+    customerEmail = '', 
+    customerName = '' 
+  } = req.query;
   
   const merchantId = process.env.CLOVER_MERCHANT_ID || 'RCTSTAVI0010002';
 
@@ -106,6 +113,7 @@ export default function handler(req, res) {
             font-size: 16px;
             transition: border-color 0.3s;
             background: white;
+            min-height: 48px;
         }
         
         .clover-input:focus {
@@ -202,6 +210,16 @@ export default function handler(req, res) {
             width: 80px;
             height: 80px;
         }
+
+        .debug-info {
+            margin-top: 20px;
+            padding: 10px;
+            background: #f0f0f0;
+            border-radius: 4px;
+            font-size: 12px;
+            font-family: monospace;
+            display: none;
+        }
     </style>
 </head>
 <body>
@@ -246,6 +264,7 @@ export default function handler(req, res) {
             </button>
             
             <div id="message" class="message"></div>
+            <div id="debugInfo" class="debug-info"></div>
         </form>
         
         <div class="secure-badge">
@@ -257,6 +276,7 @@ export default function handler(req, res) {
     </div>
     
     <script>
+        // Payment data from URL
         const paymentData = {
             locationId: '${locationId}',
             invoiceId: '${invoiceId}',
@@ -264,32 +284,65 @@ export default function handler(req, res) {
             customerEmail: '${customerEmail}',
             customerName: '${customerName}'
         };
+
+        // Debug logging
+        console.log('🔧 Payment Data:', paymentData);
+        console.log('🔧 Merchant ID:', '${merchantId}');
         
-        const clover = new Clover('${merchantId}');
-        const elements = clover.elements();
+        // Validate required data
+        if (!paymentData.locationId) {
+            showMessage('error', '❌ Missing locationId in URL. Cannot process payment.');
+            document.getElementById('payButton').disabled = true;
+        }
         
-        const styles = {
-            body: {
-                fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto',
-                fontSize: '16px',
-            },
-            input: {
-                fontSize: '16px',
-            }
-        };
+        if (!paymentData.amount || paymentData.amount <= 0) {
+            showMessage('error', '❌ Invalid amount. Cannot process payment.');
+            document.getElementById('payButton').disabled = true;
+        }
+
+        // Initialize Clover
+        let clover, elements, cardNumber, cardDate, cardCvv, cardPostalCode;
         
-        const cardNumber = elements.create('CARD_NUMBER', styles);
-        const cardDate = elements.create('CARD_DATE', styles);
-        const cardCvv = elements.create('CARD_CVV', styles);
-        const cardPostalCode = elements.create('CARD_POSTAL_CODE', styles);
+        try {
+            console.log('🔧 Initializing Clover SDK...');
+            clover = new Clover('${merchantId}');
+            elements = clover.elements();
+            
+            const styles = {
+                body: {
+                    fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto',
+                    fontSize: '16px',
+                },
+                input: {
+                    fontSize: '16px',
+                }
+            };
+            
+            // Create elements
+            cardNumber = elements.create('CARD_NUMBER', styles);
+            cardDate = elements.create('CARD_DATE', styles);
+            cardCvv = elements.create('CARD_CVV', styles);
+            cardPostalCode = elements.create('CARD_POSTAL_CODE', styles);
+            
+            // Mount elements
+            cardNumber.mount('#card-number');
+            cardDate.mount('#card-date');
+            cardCvv.mount('#card-cvv');
+            cardPostalCode.mount('#card-postal-code');
+            
+            console.log('✅ Clover Elements mounted successfully');
+            
+        } catch (error) {
+            console.error('❌ Clover initialization error:', error);
+            showMessage('error', 'Failed to initialize payment form. Please refresh the page.');
+            document.getElementById('payButton').disabled = true;
+        }
         
-        cardNumber.mount('#card-number');
-        cardDate.mount('#card-date');
-        cardCvv.mount('#card-cvv');
-        cardPostalCode.mount('#card-postal-code');
-        
+        // Form submission
         document.getElementById('paymentForm').addEventListener('submit', async function(e) {
             e.preventDefault();
+            
+            console.log('🔄 Form submitted, processing payment...');
             
             const payButton = document.getElementById('payButton');
             const originalText = payButton.innerHTML;
@@ -297,42 +350,71 @@ export default function handler(req, res) {
             payButton.disabled = true;
             payButton.innerHTML = '<span class="spinner"></span> Processing...';
             
+            // Hide previous messages
+            document.getElementById('message').style.display = 'none';
+            
             try {
-                const result = await clover.createToken();
+                // Step 1: Create Clover token
+                console.log('🔄 Step 1: Creating Clover token...');
+                const tokenResult = await clover.createToken();
                 
-                if (result.errors) {
-                    throw new Error(result.errors[0].message || 'Card validation failed');
+                console.log('🔧 Token result:', tokenResult);
+                
+                if (tokenResult.errors && tokenResult.errors.length > 0) {
+                    throw new Error(tokenResult.errors[0].message || 'Card validation failed');
                 }
                 
+                if (!tokenResult.token) {
+                    throw new Error('No token received from Clover');
+                }
+                
+                console.log('✅ Clover token created:', tokenResult.token);
+                
+                // Step 2: Prepare payment data
+                const paymentPayload = {
+                    locationId: paymentData.locationId,
+                    invoiceId: paymentData.invoiceId || null,
+                    amount: paymentData.amount,
+                    currency: 'usd',
+                    source: tokenResult.token,
+                    customerEmail: paymentData.customerEmail || null,
+                    customerName: paymentData.customerName || null,
+                };
+                
+                console.log('🔄 Step 2: Sending payment to backend...');
+                console.log('🔧 Payment payload:', paymentPayload);
+                
+                // Step 3: Process payment
                 const response = await fetch('/api/payment/process', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json'
                     },
-                    body: JSON.stringify({
-                        locationId: paymentData.locationId,
-                        invoiceId: paymentData.invoiceId,
-                        amount: paymentData.amount,
-                        currency: 'usd',
-                        source: result.token,
-                        customerEmail: paymentData.customerEmail,
-                        customerName: paymentData.customerName,
-                    })
+                    body: JSON.stringify(paymentPayload)
                 });
                 
+                console.log('🔧 Response status:', response.status);
+                
                 const paymentResult = await response.json();
+                console.log('🔧 Payment result:', paymentResult);
                 
                 if (paymentResult.success) {
+                    console.log('✅ Payment successful!');
                     showSuccess(paymentResult);
                 } else {
                     throw new Error(paymentResult.error || 'Payment failed');
                 }
                 
             } catch (error) {
-                console.error('Payment error:', error);
+                console.error('❌ Payment error:', error);
                 showMessage('error', error.message || 'Payment failed. Please try again.');
                 payButton.disabled = false;
                 payButton.innerHTML = originalText;
+                
+                // Show debug info
+                const debugInfo = document.getElementById('debugInfo');
+                debugInfo.innerHTML = 'Error: ' + error.message;
+                debugInfo.style.display = 'block';
             }
         });
         
