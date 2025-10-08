@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Clover Setup</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+        
+        .container {
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            max-width: 500px;
+            width: 100%;
+            padding: 40px;
+        }
+        
+        .logo {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        
+        .logo img {
+            width: 80px;
+            height: 80px;
+            border-radius: 50%;
+        }
+        
+        h1 {
+            text-align: center;
+            color: #333;
+            margin-bottom: 10px;
+            font-size: 28px;
+        }
+        
+        .subtitle {
+            text-align: center;
+            color: #666;
+            margin-bottom: 30px;
+            font-size: 14px;
+        }
+        
+        .form-group {
+            margin-bottom: 20px;
+        }
+        
+        label {
+            display: block;
+            margin-bottom: 8px;
+            color: #333;
+            font-weight: 500;
+            font-size: 14px;
+        }
+        
+        input, select {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 14px;
+            transition: border-color 0.3s;
+        }
+        
+        input:focus, select:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+        
+        .mode-toggle {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+        
+        .mode-btn {
+            flex: 1;
+            padding: 12px;
+            border: 2px solid #e0e0e0;
+            background: white;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: 500;
+            transition: all 0.3s;
+        }
+        
+        .mode-btn.active {
+            background: #667eea;
+            color: white;
+            border-color: #667eea;
+        }
+        
+        .btn {
+            width: 100%;
+            padding: 14px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+        
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 20px rgba(102, 126, 234, 0.4);
+        }
+        
+        .btn:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+            transform: none;
+        }
+        
+        .message {
+            padding: 12px;
+            border-radius: 8px;
+            margin-top: 20px;
+            display: none;
+            font-size: 14px;
+        }
+        
+        .message.success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        
+        .message.error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        
+        .help-text {
+            font-size: 12px;
+            color: #666;
+            margin-top: 5px;
+        }
+        
+        .spinner {
+            display: inline-block;
+            width: 16px;
+            height: 16px;
+            border: 3px solid rgba(255,255,255,.3);
+            border-radius: 50%;
+            border-top-color: #fff;
+            animation: spin 1s ease-in-out infinite;
+        }
+        
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="logo">
+            <img src="https://raw.githubusercontent.com/GalagaSolutions/OneSol-clover-integration/main/clover-logo.png" 
+                 alt="Clover Logo" 
+                 onerror="this.src='data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22%3E%3Ccircle cx=%2250%22 cy=%2250%22 r=%2240%22 fill=%22%23FF6B35%22/%3E%3C/svg%3E'">
+        </div>
+        
+        <h1>Clover Setup</h1>
+        <p class="subtitle">Connect your Clover payment processor to GoHighLevel</p>
+        
+        <form id="setupForm">
+            <div class="mode-toggle">
+                <button type="button" class="mode-btn active" data-mode="test">Test Mode</button>
+                <button type="button" class="mode-btn" data-mode="live">Live Mode</button>
+            </div>
+            
+            <div class="form-group">
+                <label for="merchantId">Clover Merchant ID *</label>
+                <input type="text" id="merchantId" required placeholder="Enter your Clover Merchant ID">
+                <div class="help-text">Find this in your Clover Dashboard</div>
+            </div>
+            
+            <div class="form-group">
+                <label for="apiToken">Clover API Token *</label>
+                <input type="password" id="apiToken" required placeholder="Enter your Clover API Token">
+                <div class="help-text">Generate this in Clover Dashboard → API Tokens</div>
+            </div>
+            
+            <div class="form-group">
+                <label for="publicKey">Clover Public Key</label>
+                <input type="text" id="publicKey" placeholder="Optional: For frontend payments">
+            </div>
+            
+            <button type="submit" class="btn" id="submitBtn">
+                Save Configuration
+            </button>
+            
+            <div id="message" class="message"></div>
+        </form>
+    </div>
+    
+    <script>
+        // Get URL parameters (GHL passes locationId, companyId, etc.)
+        const urlParams = new URLSearchParams(window.location.search);
+        const locationId = urlParams.get('location_id') || urlParams.get('locationId');
+        const companyId = urlParams.get('company_id') || urlParams.get('companyId');
+        
+        let currentMode = 'test';
+        
+        // Mode toggle
+        document.querySelectorAll('.mode-btn').forEach(btn => {
+            btn.addEventListener('click', function() {
+                document.querySelectorAll('.mode-btn').forEach(b => b.classList.remove('active'));
+                this.classList.add('active');
+                currentMode = this.dataset.mode;
+            });
+        });
+        
+        // Form submission
+        document.getElementById('setupForm').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            
+            if (!locationId) {
+                showMessage('error', 'Missing location ID. Please install the app first.');
+                return;
+            }
+            
+            const submitBtn = document.getElementById('submitBtn');
+            const originalText = submitBtn.innerHTML;
+            submitBtn.disabled = true;
+            submitBtn.innerHTML = '<span class="spinner"></span> Saving...';
+            
+            const config = {
+                locationId: locationId,
+                companyId: companyId,
+                merchantId: document.getElementById('merchantId').value,
+                apiToken: document.getElementById('apiToken').value,
+                publicKey: document.getElementById('publicKey').value,
+                liveMode: currentMode === 'live'
+            };
+            
+            try {
+                const response = await fetch('/api/config/save-clover-config', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(config)
+                });
+                
+                const result = await response.json();
+                
+                if (response.ok && result.success) {
+                    showMessage('success', '✓ Configuration saved successfully! Clover is now connected.');
+                    
+                    // Redirect to GHL after 2 seconds
+                    setTimeout(() => {
+                        if (window.parent && window.parent !== window) {
+                            // In iframe - send message to parent
+                            window.parent.postMessage({ type: 'SETUP_COMPLETE' }, '*');
+                        }
+                    }, 2000);
+                } else {
+                    showMessage('error', result.error || 'Failed to save configuration. Please try again.');
+                }
+            } catch (error) {
+                console.error('Setup error:', error);
+                showMessage('error', 'Network error. Please check your connection and try again.');
+            } finally {
+                submitBtn.disabled = false;
+                submitBtn.innerHTML = originalText;
+            }
+        });
+        
+        function showMessage(type, text) {
+            const messageDiv = document.getElementById('message');
+            messageDiv.className = `message ${type}`;
+            messageDiv.textContent = text;
+            messageDiv.style.display = 'block';
+            
+            if (type === 'success') {
+                setTimeout(() => {
+                    messageDiv.style.display = 'none';
+                }, 5000);
+            }
+        }
+        
+        // Show location ID if available (for debugging)
+        if (!locationId) {
+            showMessage('error', 'Warning: No location ID detected. Make sure you access this page from the GHL app.');
+        }
+    </script>
+</body>
+</html>
