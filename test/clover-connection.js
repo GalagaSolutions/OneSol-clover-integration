@@ -1,3 +1,4 @@
+
 export default async function handler(req, res) {
   const merchantId = process.env.CLOVER_MERCHANT_ID;
   const apiToken = process.env.CLOVER_API_TOKEN;
