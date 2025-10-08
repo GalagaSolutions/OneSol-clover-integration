@@ -3,7 +3,6 @@ export default async function handler(req, res) {
   const apiToken = process.env.CLOVER_API_TOKEN;
   const environment = process.env.CLOVER_ENVIRONMENT;
 
-  // Check if credentials are set
   const hasCredentials = !!(merchantId && apiToken && environment);
 
   return res.status(200).json({
