@@ -17,9 +17,9 @@ export default async function handler(req, res) {
 
   try {
     const key = `ghl_location_${locationId}`;
-    const tokenDataStr = await redis.get(key);
+    const tokenData = await redis.get(key);
     
-    if (!tokenDataStr) {
+    if (!tokenData) {
       return res.status(404).json({ 
         error: "No tokens found for this location",
         locationId: locationId,
@@ -27,18 +27,19 @@ export default async function handler(req, res) {
       });
     }
 
-    const tokenData = JSON.parse(tokenDataStr);
+    // Handle both string and object responses from Redis
+    const parsedData = typeof tokenData === 'string' ? JSON.parse(tokenData) : tokenData;
     
     return res.status(200).json({
       success: true,
       locationId: locationId,
-      hasAccessToken: !!tokenData.accessToken,
-      hasRefreshToken: !!tokenData.refreshToken,
-      tokenExpires: new Date(tokenData.expiresAt).toISOString(),
-      isExpired: Date.now() >= tokenData.expiresAt,
-      installedAt: tokenData.installedAt,
-      companyId: tokenData.companyId,
-      scopeCount: tokenData.scope?.split(' ').length || 0,
+      hasAccessToken: !!parsedData.accessToken,
+      hasRefreshToken: !!parsedData.refreshToken,
+      tokenExpires: new Date(parsedData.expiresAt).toISOString(),
+      isExpired: Date.now() >= parsedData.expiresAt,
+      installedAt: parsedData.installedAt,
+      companyId: parsedData.companyId,
+      scopeCount: parsedData.scope?.split(' ').length || 0,
     });
     
   } catch (error) {
