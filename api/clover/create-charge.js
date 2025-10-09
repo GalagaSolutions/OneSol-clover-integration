@@ -1,7 +1,8 @@
 import axios from "axios";
 
 /**
- * Create a charge using YOUR Clover account
+ * Create a charge using Clover Ecommerce API
+ * This uses the PAKMS/Ecommerce endpoints instead of REST API
  */
 export async function createCloverCharge(paymentData) {
   const { 
@@ -13,23 +14,21 @@ export async function createCloverCharge(paymentData) {
     metadata = {}
   } = paymentData;
 
-  const merchantId = process.env.CLOVER_MERCHANT_ID;
-  const apiToken = process.env.CLOVER_API_TOKEN;
+  const pakmsKey = process.env.CLOVER_PAKMS_KEY;
+  const apiToken = process.env.CLOVER_API_TOKEN; // Ecommerce Private Token
   const isProduction = process.env.CLOVER_ENVIRONMENT === "production";
 
-  console.log("💳 Creating Clover charge:");
-  console.log("   Merchant ID:", merchantId);
+  console.log("💳 Creating Clover Ecommerce charge:");
+  console.log("   PAKMS Key:", pakmsKey ? pakmsKey.substring(0, 10) + "..." : "NOT SET");
   console.log("   Amount:", amount, currency.toUpperCase());
   console.log("   Environment:", isProduction ? "PRODUCTION" : "SANDBOX");
-  console.log("   Has API Token:", !!apiToken);
-  console.log("   Token length:", apiToken ? apiToken.length : 0);
 
   // Validate required credentials
-  if (!merchantId) {
-    console.error("❌ Missing CLOVER_MERCHANT_ID");
+  if (!pakmsKey) {
+    console.error("❌ Missing CLOVER_PAKMS_KEY");
     return {
       success: false,
-      error: "Clover merchant ID not configured",
+      error: "Clover PAKMS key not configured",
       code: "config_error"
     };
   }
@@ -52,10 +51,10 @@ export async function createCloverCharge(paymentData) {
     };
   }
 
-  // Construct the correct API URL
+  // Use Ecommerce API endpoint
   const baseUrl = isProduction 
-    ? "https://api.clover.com"
-    : "https://sandbox.dev.clover.com";
+    ? "https://scl.clover.com"
+    : "https://scl-sandbox.dev.clover.com";
 
   const chargeUrl = `${baseUrl}/v1/charges`;
   
@@ -70,6 +69,7 @@ export async function createCloverCharge(paymentData) {
       source: source,
       capture: true,
       description: description || "Payment via GoHighLevel",
+      ecomind: "ecom", // E-commerce indicator
       metadata: {
         ...metadata,
         integration: "gohighlevel",
@@ -79,20 +79,16 @@ export async function createCloverCharge(paymentData) {
 
     console.log("📤 Request payload:", JSON.stringify(payload, null, 2));
 
+    // Use API token (Ecommerce Private Token) for authentication
     const headers = {
       "Authorization": `Bearer ${apiToken}`,
       "Content-Type": "application/json",
+      "X-Clover-Auth": apiToken,
     };
-
-    // Add merchant ID header
-    if (merchantId) {
-      headers["X-Clover-Merchant-Id"] = merchantId;
-    }
 
     console.log("📋 Request headers:", {
       "Authorization": "Bearer " + apiToken.substring(0, 10) + "...",
       "Content-Type": "application/json",
-      "X-Clover-Merchant-Id": merchantId
     });
 
     const response = await axios.post(chargeUrl, payload, { headers });
@@ -124,14 +120,12 @@ export async function createCloverCharge(paymentData) {
     console.error("   Status text:", error.response?.statusText);
     console.error("   Response data:", JSON.stringify(error.response?.data, null, 2));
     console.error("   Request URL:", error.config?.url);
-    console.error("   Request method:", error.config?.method);
 
     // Extract meaningful error message
     let errorMessage = "Payment processing failed";
     let errorCode = "processing_error";
 
     if (error.response) {
-      // Server responded with error
       const status = error.response.status;
       const data = error.response.data;
 
@@ -139,14 +133,14 @@ export async function createCloverCharge(paymentData) {
         errorMessage = data.message || data.error || "Invalid payment request";
         errorCode = data.code || "invalid_request";
       } else if (status === 401) {
-        errorMessage = "Invalid API credentials";
+        errorMessage = "Invalid API credentials - check your Ecommerce API tokens";
         errorCode = "authentication_error";
       } else if (status === 402) {
         errorMessage = data.message || "Payment declined";
         errorCode = "card_declined";
       } else if (status === 404) {
-        errorMessage = "Clover API endpoint not found - check merchant ID";
-        errorCode = "invalid_merchant";
+        errorMessage = "Clover API endpoint not found";
+        errorCode = "invalid_endpoint";
       } else if (status === 502 || status === 503) {
         errorMessage = "Clover service temporarily unavailable";
         errorCode = "service_error";
@@ -155,7 +149,6 @@ export async function createCloverCharge(paymentData) {
         errorCode = data.code || "server_error";
       }
     } else if (error.request) {
-      // Request made but no response
       errorMessage = "Could not reach Clover API - network error";
       errorCode = "network_error";
     }
@@ -170,16 +163,15 @@ export async function createCloverCharge(paymentData) {
 }
 
 export async function refundCloverCharge(chargeId, amount = null) {
-  const merchantId = process.env.CLOVER_MERCHANT_ID;
   const apiToken = process.env.CLOVER_API_TOKEN;
   const isProduction = process.env.CLOVER_ENVIRONMENT === "production";
 
   const baseUrl = isProduction 
-    ? "https://api.clover.com"
-    : "https://sandbox.dev.clover.com";
+    ? "https://scl.clover.com"
+    : "https://scl-sandbox.dev.clover.com";
 
   try {
-    const refundUrl = `${baseUrl}/v1/charges/${chargeId}/refund`;
+    const refundUrl = `${baseUrl}/v1/charges/${chargeId}/refunds`;
     
     const payload = amount ? {
       amount: Math.round(amount * 100)
@@ -189,7 +181,6 @@ export async function refundCloverCharge(chargeId, amount = null) {
       headers: {
         "Authorization": `Bearer ${apiToken}`,
         "Content-Type": "application/json",
-        "X-Clover-Merchant-Id": merchantId,
       },
     });
 
@@ -213,13 +204,12 @@ export async function refundCloverCharge(chargeId, amount = null) {
 }
 
 export async function getCloverCharge(chargeId) {
-  const merchantId = process.env.CLOVER_MERCHANT_ID;
   const apiToken = process.env.CLOVER_API_TOKEN;
   const isProduction = process.env.CLOVER_ENVIRONMENT === "production";
 
   const baseUrl = isProduction 
-    ? "https://api.clover.com"
-    : "https://sandbox.dev.clover.com";
+    ? "https://scl.clover.com"
+    : "https://scl-sandbox.dev.clover.com";
 
   try {
     const chargeUrl = `${baseUrl}/v1/charges/${chargeId}`;
@@ -227,7 +217,6 @@ export async function getCloverCharge(chargeId) {
     const response = await axios.get(chargeUrl, {
       headers: {
         "Authorization": `Bearer ${apiToken}`,
-        "X-Clover-Merchant-Id": merchantId,
       },
     });
 
