@@ -151,6 +151,20 @@ export default function handler(req, res) {
         };
         const cloverKey = '${cloverKey}';
         
+        // Track this invoice for device payment matching
+        if (paymentData.invoiceId && paymentData.amount > 0) {
+            fetch('/api/invoice/track', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    locationId: paymentData.locationId,
+                    invoiceId: paymentData.invoiceId,
+                    amount: paymentData.amount
+                })
+            }).then(() => console.log('📝 Invoice tracked for matching'))
+              .catch(err => console.log('⚠️ Could not track invoice:', err));
+        }
+        
         let logs = [];
         function log(msg, data) {
             const entry = new Date().toLocaleTimeString() + ' - ' + msg + (data ? ': ' + JSON.stringify(data).substring(0, 100) : '');
@@ -266,26 +280,27 @@ export default function handler(req, res) {
                 log('Backend response', paymentResult);
                 
                 if (paymentResult.success) {
-    document.getElementById('message').className = 'message success';
-    let successHTML = 
-        '✅ <strong>Payment Successful!</strong><br>' +
-        'Transaction: ' + paymentResult.transactionId + '<br>' +
-        'Amount: $' + paymentResult.amount;
-    
-    if (paymentResult.warning) {
-        successHTML += '<br><br>⚠️ Note: ' + paymentResult.warning;
-    }
-    
-    document.getElementById('message').innerHTML = successHTML;
-    document.getElementById('message').style.display = 'block';
-    log('✅ Payment successful');
-    
-    // Re-enable button and change text
-    btn.disabled = false;
-    btn.innerHTML = '✅ Payment Complete';
-} else {
-    throw new Error(paymentResult.error || 'Payment failed');
-}
+                    document.getElementById('message').className = 'message success';
+                    let successHTML = 
+                        '✅ <strong>Payment Successful!</strong><br>' +
+                        'Transaction: ' + paymentResult.transactionId + '<br>' +
+                        'Amount: $' + paymentResult.amount;
+                    
+                    if (paymentResult.warning) {
+                        successHTML += '<br><br>⚠️ ' + paymentResult.warning;
+                    }
+                    
+                    document.getElementById('message').innerHTML = successHTML;
+                    document.getElementById('message').style.display = 'block';
+                    log('✅ Payment successful');
+                    
+                    // Stop spinner and update button
+                    btn.disabled = false;
+                    btn.innerHTML = '✅ Payment Complete';
+                    btn.style.background = '#28a745';
+                } else {
+                    throw new Error(paymentResult.error || 'Payment failed');
+                }
                 
             } catch (error) {
                 log('❌ Error', error.message);
