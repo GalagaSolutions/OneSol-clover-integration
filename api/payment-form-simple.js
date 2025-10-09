@@ -266,16 +266,26 @@ export default function handler(req, res) {
                 log('Backend response', paymentResult);
                 
                 if (paymentResult.success) {
-                    document.getElementById('message').className = 'message success';
-                    document.getElementById('message').innerHTML = 
-                        '✅ <strong>Payment Successful!</strong><br>' +
-                        'Transaction: ' + paymentResult.transactionId + '<br>' +
-                        'Amount: $' + paymentResult.amount;
-                    document.getElementById('message').style.display = 'block';
-                    log('✅ Payment successful');
-                } else {
-                    throw new Error(paymentResult.error || 'Payment failed');
-                }
+    document.getElementById('message').className = 'message success';
+    let successHTML = 
+        '✅ <strong>Payment Successful!</strong><br>' +
+        'Transaction: ' + paymentResult.transactionId + '<br>' +
+        'Amount: $' + paymentResult.amount;
+    
+    if (paymentResult.warning) {
+        successHTML += '<br><br>⚠️ Note: ' + paymentResult.warning;
+    }
+    
+    document.getElementById('message').innerHTML = successHTML;
+    document.getElementById('message').style.display = 'block';
+    log('✅ Payment successful');
+    
+    // Re-enable button and change text
+    btn.disabled = false;
+    btn.innerHTML = '✅ Payment Complete';
+} else {
+    throw new Error(paymentResult.error || 'Payment failed');
+}
                 
             } catch (error) {
                 log('❌ Error', error.message);
