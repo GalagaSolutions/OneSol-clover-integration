@@ -9,11 +9,11 @@ export default async function handler(req, res) {
 
   try {
     const {
-      locationId,      // GHL location ID
-      invoiceId,       // GHL invoice ID (optional)
+      locationId,
+      invoiceId,
       amount,
       currency = "usd",
-      source,          // Clover payment token from frontend
+      source,
       customerId,
       customerEmail,
       customerName,
@@ -32,17 +32,7 @@ export default async function handler(req, res) {
     console.log("   Amount:", amount, currency.toUpperCase());
     console.log("   Invoice ID:", invoiceId);
 
-    // Verify GHL location has OAuth access
-    try {
-      await getLocationToken(locationId);
-    } catch (error) {
-      return res.status(400).json({
-        success: false,
-        error: "Location not connected. Please install the app first."
-      });
-    }
-
-    // Create charge in YOUR Clover account
+    // Create charge in Clover (this is working! ✅)
     const cloverResult = await createCloverCharge({
       amount,
       currency,
@@ -66,20 +56,28 @@ export default async function handler(req, res) {
       });
     }
 
-    // Update GHL invoice if provided
+    console.log("✅ Payment successful in Clover!");
+
+    // Try to update GHL invoice, but don't fail if it doesn't work
+    let invoiceUpdated = false;
     if (invoiceId) {
       try {
-        await recordPaymentInGHL(locationId, invoiceId, {
+        const accessToken = await getLocationToken(locationId);
+        await recordPaymentInGHL(locationId, invoiceId, accessToken, {
           amount,
           transactionId: cloverResult.transactionId,
         });
         console.log("✅ Payment recorded in GHL invoice");
+        invoiceUpdated = true;
       } catch (error) {
         console.error("⚠️ Failed to update GHL invoice:", error.message);
-        // Don't fail the payment if GHL update fails
+        // Don't fail the payment - just log it
+        console.log("💡 Payment still succeeded, but couldn't update GHL invoice");
+        console.log("💡 User needs to complete OAuth flow to enable invoice updates");
       }
     }
 
+    // Return success response (payment worked!)
     return res.status(200).json({
       success: true,
       transactionId: cloverResult.transactionId,
@@ -87,7 +85,9 @@ export default async function handler(req, res) {
       currency: cloverResult.currency,
       status: cloverResult.status,
       card: cloverResult.card,
-      message: "Payment processed successfully"
+      message: "Payment processed successfully",
+      invoiceUpdated: invoiceUpdated,
+      warning: !invoiceUpdated && invoiceId ? "Payment successful but invoice not updated. Complete OAuth setup." : null
     });
 
   } catch (error) {
@@ -101,9 +101,7 @@ export default async function handler(req, res) {
   }
 }
 
-async function recordPaymentInGHL(locationId, invoiceId, paymentData) {
-  const accessToken = await getLocationToken(locationId);
-  
+async function recordPaymentInGHL(locationId, invoiceId, accessToken, paymentData) {
   const url = `https://services.leadconnectorhq.com/invoices/${invoiceId}/record-payment`;
   
   await axios.post(url, {
