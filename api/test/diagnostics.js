@@ -6,26 +6,29 @@ const redis = new Redis({
 });
 
 export default async function handler(req, res) {
-  // Quick Clover test
-  if (req.query.test === "clover") {
+  const { locationId, check } = req.query;
+
+  // Check Clover connection
+  if (check === "clover") {
     const merchantId = process.env.CLOVER_MERCHANT_ID;
     const apiToken = process.env.CLOVER_API_TOKEN;
+    const pakmsKey = process.env.CLOVER_PAKMS_KEY;
     const environment = process.env.CLOVER_ENVIRONMENT;
 
     return res.status(200).json({
       connected: !!(merchantId && apiToken && environment),
       merchantId: merchantId ? `${merchantId.substring(0, 4)}...` : "NOT SET",
       hasApiToken: !!apiToken,
+      hasPakmsKey: !!pakmsKey,
       environment: environment || "NOT SET",
     });
   }
 
-  const { locationId } = req.query;
-  
+  // Check token status
   if (!locationId) {
     return res.status(400).json({ 
       error: "Missing locationId parameter",
-      usage: "Add ?locationId=YOUR_LOCATION_ID to the URL"
+      usage: "Add ?locationId=YOUR_LOCATION_ID or ?check=clover"
     });
   }
 
@@ -37,7 +40,8 @@ export default async function handler(req, res) {
       return res.status(404).json({ 
         error: "No tokens found for this location",
         locationId: locationId,
-        key: key 
+        key: key,
+        message: "OAuth not completed. Need to install app."
       });
     }
 
@@ -52,6 +56,7 @@ export default async function handler(req, res) {
       isExpired: Date.now() >= parsedData.expiresAt,
       installedAt: parsedData.installedAt,
       companyId: parsedData.companyId,
+      scopes: parsedData.scope,
       scopeCount: parsedData.scope?.split(' ').length || 0,
     });
     
