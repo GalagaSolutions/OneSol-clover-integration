@@ -120,17 +120,30 @@ async function registerPaymentProvider(locationId, accessToken) {
     liveMode: false,
   };
 
-  console.log("📤 Attempting to register payment provider");
+  console.log("📤 Registering payment provider with GHL");
+  console.log("   URL:", registerUrl);
   console.log("   Location ID:", locationId);
   console.log("   Payload:", JSON.stringify(payload));
+  console.log("   Token:", accessToken.substring(0, 20) + "...");
 
-  const response = await axios.post(registerUrl, payload, {
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-      "Content-Type": "application/json",
-      Version: "2021-07-28",
-    },
-  });
+  try {
+    const response = await axios.post(registerUrl, payload, {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
+        Version: "2021-07-28",
+      },
+    });
 
-  return response.data;
+    console.log("✅ Payment provider registered!");
+    console.log("   Response:", JSON.stringify(response.data));
+    return response.data;
+    
+  } catch (error) {
+    console.error("❌ Payment provider registration FAILED");
+    console.error("   Status:", error.response?.status);
+    console.error("   Status Text:", error.response?.statusText);
+    console.error("   Error Data:", JSON.stringify(error.response?.data));
+    throw error;
+  }
 }
