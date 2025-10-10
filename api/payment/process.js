@@ -102,9 +102,28 @@ export default async function handler(req, res) {
 }
 
 async function recordPaymentInGHL(locationId, invoiceId, accessToken, paymentData) {
-  const url = `https://services.leadconnectorhq.com/invoices/${invoiceId}/record-payment`;
+  // Updated to use correct GHL API v2 endpoint
+  const url = `https://services.leadconnectorhq.com/invoices/${invoiceId}`;
   
-  await axios.post(url, {
+  // First, get the invoice to check its structure
+  try {
+    const invoiceResponse = await axios.get(url, {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
+        Version: "2021-07-28",
+      },
+    });
+    
+    console.log("📋 Current invoice:", invoiceResponse.data);
+  } catch (error) {
+    console.error("⚠️ Could not fetch invoice:", error.response?.data);
+  }
+  
+  // Record the payment
+  const paymentUrl = `https://services.leadconnectorhq.com/invoices/${invoiceId}/schedule/payment`;
+  
+  await axios.post(paymentUrl, {
     amount: paymentData.amount,
     paymentMode: "custom",
     transactionId: paymentData.transactionId,
@@ -115,4 +134,6 @@ async function recordPaymentInGHL(locationId, invoiceId, accessToken, paymentDat
       Version: "2021-07-28",
     },
   });
+  
+  console.log("✅ Payment recorded in GHL invoice");
 }
