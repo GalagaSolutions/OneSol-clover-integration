@@ -112,18 +112,21 @@ async function storeLocationTokens(locationId, tokenData) {
 }
 
 async function registerPaymentProvider(locationId, accessToken) {
-  // This makes your payment provider appear in the location
+  // Updated endpoint and payload format for custom payment provider
   const registerUrl = "https://services.leadconnectorhq.com/payments/custom-provider/connect";
   
   const payload = {
     locationId: locationId,
+    name: "Clover by PNC",
+    description: "Accept payments via Clover",
     liveMode: false,
+    paymentsUrl: process.env.PAYMENTS_URL || `https://clover-integration25.vercel.app/api/payment/process`,
+    logoUrl: "https://www.clover.com/assets/images/public-site/press/clover_logo_green_rgb.png"
   };
 
   console.log("📤 Registering payment provider with GHL");
   console.log("   URL:", registerUrl);
-  console.log("   Location ID:", locationId);
-  console.log("   Payload:", JSON.stringify(payload));
+  console.log("   Payload:", JSON.stringify(payload, null, 2));
   console.log("   Token:", accessToken.substring(0, 20) + "...");
 
   try {
@@ -144,6 +147,9 @@ async function registerPaymentProvider(locationId, accessToken) {
     console.error("   Status:", error.response?.status);
     console.error("   Status Text:", error.response?.statusText);
     console.error("   Error Data:", JSON.stringify(error.response?.data));
-    throw error;
+    
+    // Don't throw - continue anyway
+    console.log("   Continuing without payment provider registration...");
+    console.log("   You may need to manually enable the payment provider in GHL");
   }
 }
