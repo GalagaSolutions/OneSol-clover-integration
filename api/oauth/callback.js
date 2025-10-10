@@ -53,13 +53,18 @@ export default async function handler(req, res) {
     });
 
     // Register payment provider with this location
-    try {
-      await registerPaymentProvider(locationId, access_token);
-      console.log("✅ Payment provider registered successfully!");
-    } catch (error) {
-      console.error("⚠️ Payment provider registration failed:", error.response?.data || error.message);
-      console.log("   This may need to be done manually in GHL");
-    }
+    // TEMPORARILY DISABLED - Payment provider registration returns 422
+// Will configure manually in GHL or fix API call later
+/*
+try {
+  await registerPaymentProvider(locationId, access_token);
+  console.log("✅ Payment provider registered successfully!");
+} catch (error) {
+  console.error("⚠️ Payment provider registration failed:", error.response?.data || error.message);
+  console.log("   This may need to be done manually in GHL");
+}
+*/
+console.log("⚠️ Skipping payment provider registration (will configure manually)");
 
     // Redirect back to GHL payments page
     const redirectUrl = `https://app.gohighlevel.com/location/${locationId}/settings/payments`;

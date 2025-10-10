@@ -71,6 +71,12 @@ export default async function handler(req, res) {
         invoiceUpdated = true;
       } catch (error) {
         console.error("⚠️ Failed to update GHL invoice:", error.message);
+        console.error("⚠️ Error details:", {
+          status: error.response?.status,
+          statusText: error.response?.statusText,
+          data: error.response?.data,
+          url: error.config?.url
+        });
         // Don't fail the payment - just log it
         console.log("💡 Payment still succeeded, but couldn't update GHL invoice");
         console.log("💡 User needs to complete OAuth flow to enable invoice updates");
@@ -102,12 +108,20 @@ export default async function handler(req, res) {
 }
 
 async function recordPaymentInGHL(locationId, invoiceId, accessToken, paymentData) {
-  // Updated to use correct GHL API v2 endpoint
+  // Try alternative method: Update invoice status directly
   const url = `https://services.leadconnectorhq.com/invoices/${invoiceId}`;
   
-  // First, get the invoice to check its structure
+  console.log("📝 Attempting to update invoice status");
+  console.log("   Invoice ID:", invoiceId);
+  console.log("   URL:", url);
+  
   try {
-    const invoiceResponse = await axios.get(url, {
+    // Try to update invoice status directly
+    await axios.put(url, {
+      status: "paid",
+      altId: invoiceId,
+      altType: "location"
+    }, {
       headers: {
         Authorization: `Bearer ${accessToken}`,
         "Content-Type": "application/json",
@@ -115,25 +129,13 @@ async function recordPaymentInGHL(locationId, invoiceId, accessToken, paymentDat
       },
     });
     
-    console.log("📋 Current invoice:", invoiceResponse.data);
+    console.log("✅ Invoice status updated to PAID");
+    
   } catch (error) {
-    console.error("⚠️ Could not fetch invoice:", error.response?.data);
+    console.error("⚠️ Failed to update invoice:", {
+      status: error.response?.status,
+      message: error.response?.data?.message || error.message
+    });
+    throw error;
   }
-  
-  // Record the payment
-  const paymentUrl = `https://services.leadconnectorhq.com/invoices/${invoiceId}/schedule/payment`;
-  
-  await axios.post(paymentUrl, {
-    amount: paymentData.amount,
-    paymentMode: "custom",
-    transactionId: paymentData.transactionId,
-  }, {
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-      "Content-Type": "application/json",
-      Version: "2021-07-28",
-    },
-  });
-  
-  console.log("✅ Payment recorded in GHL invoice");
 }
