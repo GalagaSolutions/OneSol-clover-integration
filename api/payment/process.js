@@ -108,20 +108,29 @@ export default async function handler(req, res) {
 }
 
 async function recordPaymentInGHL(locationId, invoiceId, accessToken, paymentData) {
-  // Try alternative method: Update invoice status directly
-  const url = `https://services.leadconnectorhq.com/invoices/${invoiceId}`;
-  
-  console.log("📝 Attempting to update invoice status");
+  console.log("📝 Recording payment in GHL");
   console.log("   Invoice ID:", invoiceId);
-  console.log("   URL:", url);
+  console.log("   Amount:", paymentData.amount);
+  console.log("   Transaction ID:", paymentData.transactionId);
+  
+  // Use the payment orders API to record the transaction
+  const paymentUrl = "https://services.leadconnectorhq.com/payments/orders";
+  
+  const payload = {
+    altId: invoiceId,
+    altType: "invoice",
+    amount: paymentData.amount * 100, // Convert to cents
+    currency: "usd",
+    status: "succeeded",
+    externalTransactionId: paymentData.transactionId,
+    transactionType: "charge",
+    paymentMode: "live"
+  };
+  
+  console.log("📤 Payment payload:", JSON.stringify(payload, null, 2));
   
   try {
-    // Try to update invoice status directly
-    await axios.put(url, {
-      status: "paid",
-      altId: invoiceId,
-      altType: "location"
-    }, {
+    const response = await axios.post(paymentUrl, payload, {
       headers: {
         Authorization: `Bearer ${accessToken}`,
         "Content-Type": "application/json",
@@ -129,12 +138,15 @@ async function recordPaymentInGHL(locationId, invoiceId, accessToken, paymentDat
       },
     });
     
-    console.log("✅ Invoice status updated to PAID");
+    console.log("✅ Payment recorded in GHL");
+    console.log("   Response:", JSON.stringify(response.data));
     
   } catch (error) {
-    console.error("⚠️ Failed to update invoice:", {
+    console.error("⚠️ Failed to record payment:", {
       status: error.response?.status,
-      message: error.response?.data?.message || error.message
+      statusText: error.response?.statusText,
+      data: error.response?.data,
+      url: error.config?.url
     });
     throw error;
   }
