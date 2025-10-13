@@ -1,56 +1,49 @@
-{{
-
-  "rewrites": [  "rewrites": [
-
-    { "source": "/oauth/callback", "destination": "/api/core/callback" },    { "source": "/oauth/callback", "destination": "/api/core/callback" },
-
-    { "source": "/setup", "destination": "/api/core/setup" },    { "source": "/setup", "destination": "/api/core/setup" },
-
-    { "source": "/system/:type", "destination": "/api/core/:type" },    { "source": "/system/:type", "destination": "/api/core/:type" },
-
-    { "source": "/pay/:type", "destination": "/api/payment/:type" },    { "source": "/pay/:type", "destination": "/api/payment/:type" },
-
-    { "source": "/webhooks/clover", "destination": "/api/webhooks/clover" },    { "source": "/webhooks/clover", "destination": "/api/webhooks/clover" },
-
-    { "source": "/test/:action", "destination": "/api/test/:action" },    { "source": "/test/:action", "destination": "/api/test/:action" },
-
-    { "source": "/config/:action", "destination": "/api/core/:action" }    { "source": "/config/:action", "destination": "/api/core/:action" }
-
-  ],  ],
-
-  "functions": {  "functions": {
-
-    "api/core/[action].js": {    "api/core/[action].js": {
-
-      "maxDuration": 10      "maxDuration": 10
-
-    },    },
-
-    "api/payment/[action].js": {    "api/payment/[action].js": {
-
-      "maxDuration": 10      "maxDuration": 10
-
-    },    },
-
-    "api/webhooks/clover.js": {    "api/webhooks/clover.js": {
-
-      "maxDuration": 10      "maxDuration": 10
-
-    }    }
-
-  },  },
-
-  "builds": [  "excludeFiles": "lib/**/*"
-
-    {}
-
-      "src": "api/**/*.js",}
-
-      "use": "@vercel/node",
-      "config": {
-        "includeFiles": ["api/**/*"],
-        "excludeFiles": ["lib/**/*"]
-      }
+{
+  "rewrites": [
+    {
+      "source": "/oauth/callback",
+      "destination": "/api/core/callback"
+    },
+    {
+      "source": "/setup",
+      "destination": "/api/core/setup"
+    },
+    {
+      "source": "/system/:type",
+      "destination": "/api/core/:type"
+    },
+    {
+      "source": "/pay/:type",
+      "destination": "/api/payment/:type"
+    },
+    {
+      "source": "/webhooks/clover",
+      "destination": "/api/webhooks/clover"
+    },
+    {
+      "source": "/test/:action",
+      "destination": "/api/test/:action"
+    },
+    {
+      "source": "/config/:action",
+      "destination": "/api/core/:action"
+    }
+  ],
+  "functions": {
+    "api/core/[action].js": {
+      "maxDuration": 10
+    },
+    "api/payment/[action].js": {
+      "maxDuration": 10
+    },
+    "api/webhooks/clover.js": {
+      "maxDuration": 10
+    }
+  },
+  "builds": [
+    {
+      "src": "api/**/*.js",
+      "use": "@vercel/node"
     }
   ]
 }
