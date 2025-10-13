@@ -1,5 +1,8 @@
-// api/webhooks/clover.js
 import { getLocationToken } from "../utils/getLocationToken.js";
+import { recordPaymentInGHL } from "../utils/ghlInvoiceUpdate.js";
+import { matchPaymentToInvoice, storeUnmatchedPayment } from "../utils/paymentMatching.js";
+import { notifyFailedInvoiceUpdate } from "../utils/notificationService.js";
+import { getCloverConfig } from "../utils/cloverConfig.js";
 import axios from "axios";
 import { Redis } from "@upstash/redis";
 
@@ -8,6 +11,36 @@ const redis = new Redis({
   token: process.env.storage_KV_REST_API_TOKEN,
 });
 
+/**
+ * Get payment details from Clover API
+ */
+async function getCloverPayment(merchantId, paymentId) {
+  try {
+    const config = await getCloverConfig(merchantId);
+    if (!config) {
+      throw new Error('Clover configuration not found for merchant');
+    }
+
+    const response = await axios.get(
+      `https://api.clover.com/v3/merchants/${merchantId}/payments/${paymentId}`,
+      {
+        headers: { 
+          "Authorization": `Bearer ${config.apiToken}`,
+          "Content-Type": "application/json"
+        }
+      }
+    );
+
+    return response.data || null;
+  } catch (error) {
+    console.error("Failed to get payment details:", error.message);
+    return null;
+  }
+}
+
+/**
+ * Main webhook handler for Clover events
+ */
 export default async function handler(req, res) {
   if (req.method !== "POST") {
     return res.status(405).json({ error: "Method not allowed" });
@@ -19,22 +52,31 @@ export default async function handler(req, res) {
 
     const { type, merchantId, objectId } = req.body;
 
+    if (!type || !merchantId || !objectId) {
+      return res.status(400).json({ 
+        received: true,
+        status: 'error',
+        error: 'Missing required webhook data'
+      });
+    }
+
     // Only process payment events
     if (type !== "PAYMENT_CREATED" && type !== "CREATE") {
       console.log("ℹ️ Ignoring event type:", type);
       return res.status(200).json({ received: true });
     }
 
-    console.log("💳 Payment event detected!");
-    console.log("   Merchant ID:", merchantId);
-    console.log("   Payment ID:", objectId);
+    console.log("💳 Payment event detected:", { merchantId, paymentId: objectId });
 
     // Get payment details from Clover
     const payment = await getCloverPayment(merchantId, objectId);
     
     if (!payment) {
-      console.error("❌ Could not retrieve payment");
-      return res.status(200).json({ received: true });
+      return res.status(200).json({ 
+        received: true,
+        status: 'error',
+        error: 'Could not retrieve payment details'
+      });
     }
 
     console.log("✅ Payment details:", {
@@ -44,128 +86,75 @@ export default async function handler(req, res) {
     });
 
     // Try to match payment to invoice
-    const match = await matchPaymentToInvoice(payment);
-
+    const match = await matchPaymentToInvoice(payment, merchantId);
+    
     if (!match) {
-      console.log("⚠️ No matching invoice found");
-      await storeUnmatchedPayment(payment);
+      await storeUnmatchedPayment(payment, merchantId);
       return res.status(200).json({ 
-        received: true, 
-        matched: false 
+        received: true,
+        matched: false,
+        status: 'unmatched',
+        message: 'Payment stored for later matching'
       });
     }
 
-    console.log("🎯 Matched to invoice:", match.invoiceId);
+    // Try to update the GHL invoice
+    try {
+      const accessToken = await getLocationToken(match.locationId);
+      await recordPaymentInGHL(match.locationId, match.invoiceId, accessToken, {
+        amount: payment.amount / 100,
+        transactionId: payment.id
+      });
+      
+      return res.status(200).json({
+        received: true,
+        matched: true,
+        invoiceId: match.invoiceId,
+        status: 'completed',
+        message: 'Payment processed and invoice updated'
+      });
 
-    // Update GHL invoice
-    await updateGHLInvoice(match.locationId, match.invoiceId, {
-      amount: payment.amount / 100,
-      transactionId: payment.id
-    });
+    } catch (error) {
+      // Store failed update for retry
+      const failureKey = `failed_invoice_update_${payment.id}`;
+      await redis.set(failureKey, JSON.stringify({
+        error: "Payment processed successfully but invoice update failed",
+        paymentId: payment.id,
+        invoiceId: match.invoiceId,
+        locationId: match.locationId,
+        amount: payment.amount / 100,
+        timestamp: new Date().toISOString(),
+        errorDetails: {
+          message: error.message,
+          status: error.response?.status,
+          data: error.response?.data
+        },
+        retryCount: 0
+      }), { ex: 86400 });
 
-    console.log("✅ Invoice updated!");
+      // Notify about the failed update
+      await notifyFailedInvoiceUpdate(match.locationId, {
+        invoiceId: match.invoiceId,
+        paymentId: payment.id,
+        amount: payment.amount / 100,
+        error: error.message
+      });
 
-    return res.status(200).json({
-      received: true,
-      matched: true,
-      invoiceId: match.invoiceId
-    });
-
+      return res.status(200).json({
+        received: true,
+        matched: true,
+        invoiceId: match.invoiceId,
+        status: 'partial',
+        message: 'Payment processed but invoice update failed',
+        error: error.message
+      });
+    }
   } catch (error) {
     console.error("❌ Webhook error:", error);
-    return res.status(200).json({ received: true, error: error.message });
-  }
-}
-
-async function getCloverPayment(merchantId, paymentId) {
-  const apiToken = process.env.CLOVER_API_TOKEN;
-  const isProduction = process.env.CLOVER_ENVIRONMENT === "production";
-  
-  const baseUrl = isProduction 
-    ? "https://api.clover.com"
-    : "https://sandbox.dev.clover.com";
-
-  try {
-    const url = `${baseUrl}/v3/merchants/${merchantId}/payments/${paymentId}`;
-    
-    const response = await axios.get(url, {
-      headers: { "Authorization": `Bearer ${apiToken}` }
+    return res.status(200).json({ 
+      received: true, 
+      status: 'error',
+      error: error.message 
     });
-
-    return response.data;
-  } catch (error) {
-    console.error("Failed to get payment:", error.message);
-    return null;
   }
-}
-
-async function matchPaymentToInvoice(payment) {
-  // Strategy 1: Check payment note for invoice ID
-  if (payment.note) {
-    const invoiceMatch = payment.note.match(/(INV-[\w]+|TEST-[\w]+)/i);
-    if (invoiceMatch) {
-      const invoiceId = invoiceMatch[0];
-      const locationId = await findLocationForInvoice(invoiceId);
-      
-      if (locationId) {
-        return { locationId, invoiceId };
-      }
-    }
-  }
-
-  // Strategy 2: Match by amount and recent time
-  const amountInCents = payment.amount;
-  const key = `pending_invoice_${amountInCents}`;
-  const match = await redis.get(key);
-  
-  if (match) {
-    const data = typeof match === 'string' ? JSON.parse(match) : match;
-    
-    // Check if within 10 minutes
-    const timeDiff = Date.now() - data.timestamp;
-    if (timeDiff < 10 * 60 * 1000) {
-      await redis.del(key);
-      return {
-        locationId: data.locationId,
-        invoiceId: data.invoiceId
-      };
-    }
-  }
-
-  return null;
-}
-
-async function findLocationForInvoice(invoiceId) {
-  // For now, return default location
-  // In production, you'd query GHL API to find which location owns this invoice
-  return "cv3mmKLIVdqbZSVeksCW";
-}
-
-async function storeUnmatchedPayment(payment) {
-  const key = `unmatched_payment_${payment.id}`;
-  await redis.set(key, JSON.stringify({
-    paymentId: payment.id,
-    amount: payment.amount / 100,
-    timestamp: Date.now(),
-    note: payment.note
-  }), { ex: 86400 * 7 }); // 7 days
-}
-
-async function updateGHLInvoice(locationId, invoiceId, paymentData) {
-  const accessToken = await getLocationToken(locationId);
-  
-  const url = `https://services.leadconnectorhq.com/invoices/${invoiceId}/record-payment`;
-  
-  await axios.post(url, {
-    amount: paymentData.amount,
-    paymentMode: "custom",
-    transactionId: paymentData.transactionId,
-    notes: "Payment via Clover device"
-  }, {
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-      "Content-Type": "application/json",
-      Version: "2021-07-28"
-    }
-  });
 }

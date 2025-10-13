@@ -1,7 +1,8 @@
 {
   "rewrites": [
-    { "source": "/oauth/callback", "destination": "/api/oauth/callback" },
-    { "source": "/pay/clover", "destination": "/api/pay/clover" },
-    { "source": "/clover/charge", "destination": "/api/clover/charge" }
+    { "source": "/oauth/callback", "destination": "/api/auth/callback" },
+    { "source": "/setup", "destination": "/api/auth/setup" },
+    { "source": "/pay/:action", "destination": "/api/payment/:action" },
+    { "source": "/system/:action", "destination": "/api/system/:action" }
   ]
 }

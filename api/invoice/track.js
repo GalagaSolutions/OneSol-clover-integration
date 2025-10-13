@@ -12,7 +12,7 @@ export default async function handler(req, res) {
   }
 
   try {
-    const { locationId, invoiceId, amount } = req.body;
+    const { locationId, invoiceId, amount, customerName, customerEmail, invoiceNumber } = req.body;
 
     if (!locationId || !invoiceId || !amount) {
       return res.status(400).json({
@@ -23,15 +23,26 @@ export default async function handler(req, res) {
 
     console.log("📝 Tracking invoice:", invoiceId, "Amount:", amount);
 
+    // Store by both amount and invoice number for reliable matching
     const amountInCents = Math.round(amount * 100);
-    const key = `pending_invoice_${amountInCents}`;
     
-    await redis.set(key, JSON.stringify({
+    // Create a compound key that includes location for multiple merchant support
+    const amountKey = `pending_invoice_amount_${locationId}_${amountInCents}`;
+    const invoiceKey = `pending_invoice_number_${locationId}_${invoiceNumber}`;
+    
+    const invoiceData = {
       locationId,
       invoiceId,
+      invoiceNumber,
       amount: amountInCents,
+      customerName,
+      customerEmail,
       timestamp: Date.now()
-    }), { ex: 3600 }); // 1 hour
+    };
+    
+    // Store invoice data with both keys for 24 hours
+    await redis.set(amountKey, JSON.stringify(invoiceData), { ex: 86400 });
+    await redis.set(invoiceKey, JSON.stringify(invoiceData), { ex: 86400 }); // 24 hours
 
     console.log("✅ Invoice tracked");
 

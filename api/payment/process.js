@@ -32,12 +32,31 @@ export default async function handler(req, res) {
     console.log("   Amount:", amount, currency.toUpperCase());
     console.log("   Invoice ID:", invoiceId);
 
-    // Create charge in Clover (this is working! ✅)
+    // Verify Clover configuration first
+    const { getCloverConfig, verifyCloverCredentials } = require('../utils/cloverConfig');
+    const cloverConfig = await getCloverConfig(locationId);
+    
+    const verificationResult = await verifyCloverCredentials(
+      cloverConfig.merchantId,
+      cloverConfig.apiToken
+    );
+
+    if (!verificationResult.verified) {
+      return res.status(400).json({
+        success: false,
+        error: "Clover integration not properly configured. Please complete the setup process.",
+        code: "CLOVER_CONFIG_ERROR"
+      });
+    }
+
+    // Create charge in Clover with verified credentials
     const cloverResult = await createCloverCharge({
       amount,
       currency,
       source,
       customerId,
+      merchantId: cloverConfig.merchantId,
+      apiToken: cloverConfig.apiToken,
       description: invoiceId ? `GHL Invoice ${invoiceId}` : `Payment from ${customerName || customerEmail}`,
       metadata: {
         locationId,
@@ -58,32 +77,57 @@ export default async function handler(req, res) {
 
     console.log("✅ Payment successful in Clover!");
 
-    // Try to update GHL invoice, but don't fail if it doesn't work
-    let invoiceUpdated = false;
-    if (invoiceId) {
-      try {
-        const accessToken = await getLocationToken(locationId);
-        await recordPaymentInGHL(locationId, invoiceId, accessToken, {
-          amount,
-          transactionId: cloverResult.transactionId,
-        });
-        console.log("✅ Payment recorded in GHL invoice");
-        invoiceUpdated = true;
-      } catch (error) {
-        console.error("⚠️ Failed to update GHL invoice:", error.message);
-        console.error("⚠️ Error details:", {
-          status: error.response?.status,
-          statusText: error.response?.statusText,
-          data: error.response?.data,
-          url: error.config?.url
-        });
-        // Don't fail the payment - just log it
-        console.log("💡 Payment still succeeded, but couldn't update GHL invoice");
-        console.log("💡 User needs to complete OAuth flow to enable invoice updates");
-      }
-    }
+      // Try to update GHL invoice, but don't fail if it doesn't work
+      let invoiceUpdated = false;
+      let invoiceUpdateError = null;
+      if (invoiceId) {
+        try {
+          const accessToken = await getLocationToken(locationId);
+          await recordPaymentInGHL(locationId, invoiceId, accessToken, {
+            amount,
+            transactionId: cloverResult.transactionId,
+          });
+          console.log("✅ Payment recorded in GHL invoice");
+          invoiceUpdated = true;
+        } catch (error) {
+          console.error("⚠️ Failed to update GHL invoice:", error.message);
+          console.error("⚠️ Error details:", {
+            status: error.response?.status,
+            statusText: error.response?.statusText,
+            data: error.response?.data,
+            url: error.config?.url
+          });
+          
+          // Store detailed error information
+          invoiceUpdateError = {
+            message: "Payment was successful but invoice update failed",
+            details: error.message,
+            code: error.response?.status || 'UNKNOWN',
+            reason: error.response?.data?.message || 'Unknown error',
+            timestamp: new Date().toISOString(),
+            paymentId: cloverResult.transactionId
+          };
 
-    // Return success response (payment worked!)
+          // Store the failed update for retry
+          await redis.set(
+            `failed_invoice_update_${cloverResult.transactionId}`,
+            JSON.stringify({
+              invoiceId,
+              locationId,
+              paymentDetails: {
+                amount,
+                transactionId: cloverResult.transactionId
+              },
+              error: invoiceUpdateError,
+              retryCount: 0
+            }),
+            { ex: 86400 } // Store for 24 hours for retry
+          );
+
+          console.log("💡 Payment successful in Clover but invoice update failed");
+          console.log("💡 Payment details saved for retry. Manual sync may be required");
+        }
+      }    // Return success response (payment worked!)
     return res.status(200).json({
       success: true,
       transactionId: cloverResult.transactionId,
