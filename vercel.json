@@ -1,10 +1,17 @@
 {
+  "functions": {
+    "lib/**/*": {
+      "runtime": false
+    }
+  },
   "rewrites": [
     { "source": "/oauth/callback", "destination": "/api/core/callback" },
     { "source": "/setup", "destination": "/api/core/setup" },
     { "source": "/system/:type", "destination": "/api/core/:type" },
     { "source": "/pay/:type", "destination": "/api/payment/:type" },
-    { "source": "/webhooks/clover", "destination": "/api/webhooks/clover" }
+    { "source": "/webhooks/clover", "destination": "/api/webhooks/clover" },
+    { "source": "/test/:action", "destination": "/api/test/:action" },
+    { "source": "/config/:action", "destination": "/api/core/:action" }
   ],
   "functions": {
     "api/core/[action].js": {

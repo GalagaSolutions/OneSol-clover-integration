@@ -1,6 +1,6 @@
 // api/core/[action].js
-import { getLocationTokens, storeLocationTokens } from "../utils/tokenStorage.js";
-import { verifyCloverCredentials, getCloverConfig } from "../utils/cloverConfig.js";
+import { getLocationTokens, storeLocationTokens } from "../../lib/tokenStorage.js";
+import { verifyCloverCredentials, getCloverConfig } from "../../lib/cloverConfig.js";
 import axios from "axios";
 import { Redis } from "@upstash/redis";
 

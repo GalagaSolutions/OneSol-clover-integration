@@ -1,8 +1,8 @@
-// api/payment/[action].js
-import { createCloverCharge } from "../utils/cloverOperations";
-import { getLocationToken } from "../utils/getLocationToken";
-import { recordPaymentInGHL } from "../utils/ghlInvoiceUpdate";
-import { Redis } from "@upstash/redis";
+const { getLocationTokenFromRequest } = require('../../lib/getLocationToken');
+const { matchPaymentToInvoice } = require('../../lib/paymentMatching');
+const { updateInvoiceInGHL } = require('../../lib/ghlInvoiceUpdate');
+const { getCloverConfig } = require('../../lib/cloverConfig');
+const { Redis } = require('@upstash/redis');
 
 const redis = new Redis({
   url: process.env.storage_KV_REST_API_URL,
