@@ -1,7 +1,10 @@
 {
   "rewrites": [
     { "source": "/oauth/callback", "destination": "/api/oauth/callback" },
-    { "source": "/pay/clover", "destination": "/api/pay/clover" },
-    { "source": "/clover/charge", "destination": "/api/clover/charge" }
+    { "source": "/oauth/redirect", "destination": "/oauth/redirect.html" },
+    { "source": "/setup", "destination": "/integration/index.html" },
+    { "source": "/integration", "destination": "/integration/index.html" },
+    { "source": "/pay/clover", "destination": "/api/payment/clover" },
+    { "source": "/clover/charge", "destination": "/api/payment/process" }
   ]
 }

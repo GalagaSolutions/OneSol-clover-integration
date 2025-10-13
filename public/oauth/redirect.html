@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Redirecting to Clover Setup</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+      }
+      body {
+        margin: 0;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+          Oxygen, Ubuntu, Cantarell, "Open Sans", "Helvetica Neue", sans-serif;
+        min-height: 100vh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: #0f172a;
+        background: radial-gradient(circle at top, #6366f1 0%, #0f172a 55%);
+        color: #f8fafc;
+        padding: 24px;
+      }
+      .card {
+        max-width: 520px;
+        width: 100%;
+        background: rgba(15, 23, 42, 0.85);
+        border-radius: 18px;
+        padding: 36px 32px;
+        box-shadow: 0 24px 40px rgba(15, 23, 42, 0.35);
+        text-align: center;
+        backdrop-filter: blur(14px);
+      }
+      h1 {
+        font-size: 24px;
+        margin-bottom: 12px;
+      }
+      p {
+        font-size: 15px;
+        line-height: 1.6;
+        margin-bottom: 18px;
+        color: rgba(241, 245, 249, 0.85);
+      }
+      a.button {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+        padding: 12px 20px;
+        border-radius: 999px;
+        background: linear-gradient(120deg, #22d3ee 0%, #6366f1 100%);
+        color: #0f172a;
+        font-weight: 600;
+        text-decoration: none;
+        box-shadow: 0 16px 30px rgba(45, 212, 191, 0.25);
+      }
+      .status {
+        font-size: 13px;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: rgba(148, 163, 184, 0.75);
+        margin-bottom: 10px;
+      }
+      .hidden {
+        display: none;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="card">
+      <div class="status">Hang tight</div>
+      <h1>Taking You to Clover Setup</h1>
+      <p>
+        We are opening the Clover integration screen so you can finish
+        connecting your merchant account inside GoHighLevel.
+      </p>
+      <a class="button" id="continue" href="#">Continue</a>
+      <p id="manual" class="hidden">
+        If nothing happens automatically, click Continue to open the setup page
+        in a new tab.
+      </p>
+    </div>
+    <script>
+      const params = new URLSearchParams(window.location.search);
+      const query = params.toString();
+      const integrationPath = "/integration/" + (query ? `?${query}` : "");
+      const integrationUrl = new URL(integrationPath, window.location.origin).toString();
+
+      const continueBtn = document.getElementById("continue");
+      continueBtn.href = integrationUrl;
+
+      function attemptRedirect() {
+        const message = { type: "CLOVER_OAUTH_REDIRECT", url: integrationUrl };
+
+        if (window.parent && window.parent !== window) {
+          try {
+            window.parent.postMessage(message, "*");
+          } catch (error) {
+            console.warn("postMessage to parent failed", error);
+          }
+
+          try {
+            window.top.location.href = integrationUrl;
+            return;
+          } catch (error) {
+            console.warn("Unable to update top-level location", error);
+          }
+        }
+
+        window.location.replace(integrationUrl);
+      }
+
+      setTimeout(attemptRedirect, 50);
+      setTimeout(() => {
+        document.getElementById("manual").classList.remove("hidden");
+      }, 600);
+    </script>
+  </body>
+</html>
