@@ -52,19 +52,14 @@ export default async function handler(req, res) {
       installedAt: new Date().toISOString(),
     });
 
-    // Register payment provider with this location
-    // TEMPORARILY DISABLED - Payment provider registration returns 422
-// Will configure manually in GHL or fix API call later
-/*
-try {
-  await registerPaymentProvider(locationId, access_token);
-  console.log("✅ Payment provider registered successfully!");
-} catch (error) {
-  console.error("⚠️ Payment provider registration failed:", error.response?.data || error.message);
-  console.log("   This may need to be done manually in GHL");
-}
-*/
-console.log("⚠️ Skipping payment provider registration (will configure manually)");
+    // Try to register payment provider
+    try {
+      await registerPaymentProvider(locationId, access_token);
+      console.log("✅ Payment provider registration attempted");
+    } catch (error) {
+      console.error("⚠️ Payment provider registration failed:", error.message);
+      console.log("   Continuing with installation...");
+    }
 
     // Redirect back to GHL payments page
     const redirectUrl = `https://app.gohighlevel.com/location/${locationId}/settings/payments`;
@@ -117,44 +112,74 @@ async function storeLocationTokens(locationId, tokenData) {
 }
 
 async function registerPaymentProvider(locationId, accessToken) {
-  // Updated endpoint and payload format for custom payment provider
-  const registerUrl = "https://services.leadconnectorhq.com/payments/custom-provider/connect";
+  console.log("📤 Attempting to register payment provider with GHL");
+  console.log("   Location ID:", locationId);
+  
+  // Try the standard custom provider endpoint
+  const connectUrl = "https://services.leadconnectorhq.com/payments/custom-provider/connect";
   
   const payload = {
     locationId: locationId,
-    name: "Clover by PNC",
-    description: "Accept payments via Clover",
-    liveMode: false,
-    paymentsUrl: process.env.PAYMENTS_URL || `https://clover-integration25.vercel.app/api/payment/process`,
-    logoUrl: "https://www.clover.com/assets/images/public-site/press/clover_logo_green_rgb.png"
+    liveMode: false
   };
 
-  console.log("📤 Registering payment provider with GHL");
-  console.log("   URL:", registerUrl);
+  console.log("   Endpoint:", connectUrl);
   console.log("   Payload:", JSON.stringify(payload, null, 2));
-  console.log("   Token:", accessToken.substring(0, 20) + "...");
 
   try {
-    const response = await axios.post(registerUrl, payload, {
+    const response = await axios.post(connectUrl, payload, {
       headers: {
-        Authorization: `Bearer ${accessToken}`,
+        "Authorization": `Bearer ${accessToken}`,
         "Content-Type": "application/json",
-        Version: "2021-07-28",
+        "Version": "2021-07-28",
       },
     });
 
-    console.log("✅ Payment provider registered!");
+    console.log("✅ Payment provider registered successfully!");
     console.log("   Response:", JSON.stringify(response.data));
     return response.data;
     
   } catch (error) {
-    console.error("❌ Payment provider registration FAILED");
+    console.error("❌ Payment provider registration failed");
     console.error("   Status:", error.response?.status);
     console.error("   Status Text:", error.response?.statusText);
     console.error("   Error Data:", JSON.stringify(error.response?.data));
     
-    // Don't throw - continue anyway
-    console.log("   Continuing without payment provider registration...");
-    console.log("   You may need to manually enable the payment provider in GHL");
+    // Try alternative endpoint if first one fails
+    if (error.response?.status === 422) {
+      console.log("   Trying alternative registration method...");
+      
+      try {
+        const altUrl = "https://services.leadconnectorhq.com/payments/integrations/provider/connect";
+        const altPayload = {
+          locationId: locationId,
+          provider: "clover",
+          live: false
+        };
+        
+        console.log("   Alternative endpoint:", altUrl);
+        console.log("   Alternative payload:", JSON.stringify(altPayload, null, 2));
+        
+        const altResponse = await axios.post(altUrl, altPayload, {
+          headers: {
+            "Authorization": `Bearer ${accessToken}`,
+            "Content-Type": "application/json",
+            "Version": "2021-07-28",
+          },
+        });
+        
+        console.log("✅ Alternative registration successful!");
+        console.log("   Response:", JSON.stringify(altResponse.data));
+        return altResponse.data;
+        
+      } catch (altError) {
+        console.error("❌ Alternative registration also failed");
+        console.error("   Status:", altError.response?.status);
+        console.error("   Error:", JSON.stringify(altError.response?.data));
+      }
+    }
+    
+    // Don't throw - allow installation to continue
+    console.log("   Installation will continue, but payment provider may need manual setup");
   }
 }
