@@ -1,0 +1,462 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Clover + GoHighLevel Integration</title>
+    <style>
+      :root {
+        color-scheme: light;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI",
+          Roboto, Oxygen, Ubuntu, Cantarell, "Open Sans", "Helvetica Neue",
+          sans-serif;
+        min-height: 100vh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 48px 20px;
+        background: radial-gradient(circle at top, #0ea5e9 0%, #1e1b4b 65%);
+        color: #0f172a;
+      }
+      .surface {
+        width: min(920px, 100%);
+        background: #f8fafc;
+        border-radius: 28px;
+        padding: clamp(32px, 5vw, 48px);
+        box-shadow: 0 30px 120px rgba(14, 165, 233, 0.28);
+      }
+      header {
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+        margin-bottom: 32px;
+      }
+      header h1 {
+        margin: 0;
+        font-size: clamp(26px, 4vw, 34px);
+      }
+      header p {
+        margin: 0;
+        font-size: 16px;
+        color: #475569;
+        line-height: 1.6;
+      }
+      .status-banner {
+        border-radius: 18px;
+        padding: 20px 24px;
+        margin-bottom: 26px;
+        background: #e0f2fe;
+        border: 1px solid rgba(37, 99, 235, 0.35);
+        color: #1d4ed8;
+        display: none;
+      }
+      .status-banner.success {
+        display: block;
+      }
+      .status-banner.warning {
+        display: block;
+        background: #fff7ed;
+        border-color: rgba(234, 88, 12, 0.35);
+        color: #c2410c;
+      }
+      form {
+        display: grid;
+        gap: 22px;
+      }
+      .field {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+      }
+      label {
+        font-weight: 600;
+        font-size: 14px;
+        letter-spacing: 0.01em;
+      }
+      input,
+      select {
+        width: 100%;
+        padding: 14px 16px;
+        border-radius: 14px;
+        border: 1px solid rgba(15, 23, 42, 0.14);
+        font-size: 15px;
+        background: white;
+        transition: border-color 0.2s ease, box-shadow 0.2s ease;
+      }
+      input:focus,
+      select:focus {
+        outline: none;
+        border-color: #0ea5e9;
+        box-shadow: 0 0 0 4px rgba(14, 165, 233, 0.18);
+      }
+      .hint {
+        font-size: 13px;
+        color: #64748b;
+        line-height: 1.5;
+      }
+      .grid {
+        display: grid;
+        gap: 18px;
+      }
+      .grid.two {
+        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      }
+      button[type="submit"] {
+        border: none;
+        padding: 16px 22px;
+        border-radius: 16px;
+        font-weight: 700;
+        font-size: 16px;
+        background: linear-gradient(120deg, #22d3ee 0%, #2563eb 60%, #7c3aed 100%);
+        color: white;
+        cursor: pointer;
+        box-shadow: 0 22px 40px rgba(56, 189, 248, 0.4);
+        transition: transform 0.15s ease, box-shadow 0.15s ease, opacity 0.2s ease;
+      }
+      button[type="submit"]:disabled {
+        opacity: 0.65;
+        cursor: wait;
+        box-shadow: none;
+      }
+      .callouts {
+        margin-top: 36px;
+        border-top: 1px solid rgba(15, 23, 42, 0.08);
+        padding-top: 30px;
+        display: grid;
+        gap: 24px;
+      }
+      .callouts section {
+        background: white;
+        border-radius: 20px;
+        padding: 22px 24px;
+        border: 1px solid rgba(148, 163, 184, 0.18);
+        box-shadow: 0 18px 35px rgba(15, 23, 42, 0.07);
+      }
+      .callouts h2 {
+        margin: 0 0 10px;
+        font-size: 18px;
+      }
+      .callouts p {
+        margin: 0 0 12px;
+        font-size: 14px;
+        color: #475569;
+        line-height: 1.6;
+      }
+      .chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 6px 12px;
+        border-radius: 999px;
+        background: rgba(37, 99, 235, 0.14);
+        color: #1d4ed8;
+        font-size: 13px;
+        font-weight: 600;
+      }
+      .result {
+        margin-top: 16px;
+        font-size: 14px;
+        padding: 14px 16px;
+        border-radius: 12px;
+        display: none;
+      }
+      .result.success {
+        display: block;
+        background: #dcfce7;
+        color: #166534;
+        border: 1px solid rgba(22, 101, 52, 0.25);
+      }
+      .result.error {
+        display: block;
+        background: #fee2e2;
+        color: #b91c1c;
+        border: 1px solid rgba(185, 28, 28, 0.3);
+      }
+      @media (max-width: 680px) {
+        body {
+          padding: 32px 16px;
+        }
+        .surface {
+          padding: 28px 22px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="surface">
+      <header>
+        <div class="chip">Clover Payments + GoHighLevel</div>
+        <h1>Connect your Clover merchant keys to GoHighLevel</h1>
+        <p>
+          Finish the installation by pasting your Clover REST API credentials.
+          We'll save them for this GoHighLevel location so that invoices and the
+          hosted payment form can sync.
+        </p>
+      </header>
+
+      <div id="status" class="status-banner"></div>
+
+      <form id="cloverForm">
+        <div class="grid two">
+          <div class="field">
+            <label for="locationId">GoHighLevel Location ID</label>
+            <input
+              id="locationId"
+              name="locationId"
+              placeholder="e.g. L3aY9..."
+              required
+            />
+            <p class="hint">
+              This is passed from the OAuth install. If it is blank, copy the
+              location ID from GoHighLevel &gt; Settings &gt; Company.
+            </p>
+          </div>
+          <div class="field">
+            <label for="companyId">Company ID (optional)</label>
+            <input
+              id="companyId"
+              name="companyId"
+              placeholder="e.g. Cmp_123..."
+            />
+            <p class="hint">
+              Only needed for multi-location agencies. Leaving it empty is safe
+              for single sub-accounts.
+            </p>
+          </div>
+        </div>
+
+        <div class="grid two">
+          <div class="field">
+            <label for="merchantId">Clover Merchant ID</label>
+            <input
+              id="merchantId"
+              name="merchantId"
+              placeholder="Your Clover merchant ID"
+              required
+            />
+          </div>
+          <div class="field">
+            <label for="publicKey">Clover Public Key</label>
+            <input
+              id="publicKey"
+              name="publicKey"
+              placeholder="Optional: Publishable key for hosted payments"
+            />
+            <p class="hint">
+              Add the publishable key if you plan to use the embedded Clover
+              hosted payment form.
+            </p>
+          </div>
+        </div>
+
+        <div class="field">
+          <label for="apiToken">Clover API Token</label>
+          <input
+            id="apiToken"
+            name="apiToken"
+            placeholder="Paste your REST API token"
+            type="password"
+            autocomplete="off"
+            required
+          />
+          <p class="hint">
+            Create a token from the Clover dashboard (Setup &gt; API Tokens) with
+            payments.read and payments.write scopes.
+          </p>
+        </div>
+
+        <div class="grid two">
+          <div class="field">
+            <label for="mode">Environment</label>
+            <select id="mode" name="mode">
+              <option value="live">Live (production)</option>
+              <option value="test">Sandbox / demo</option>
+            </select>
+          </div>
+        </div>
+
+        <button type="submit">Save Clover credentials</button>
+
+        <div id="result" class="result"></div>
+      </form>
+
+      <div class="callouts">
+        <section>
+          <h2>Need to test a payment?</h2>
+          <p>
+            Launch the hosted payment form after saving your credentials to run a
+            test charge. Use the Clover sandbox card 4111 1111 1111 1111 for
+            non-production mode.
+          </p>
+          <a id="paymentLink" class="chip" href="#" target="_blank"
+            >Open payment form</a
+          >
+        </section>
+
+        <section>
+          <h2>Device payments</h2>
+          <p>
+            When collecting payments on a Clover terminal, enter the GoHighLevel
+            invoice ID in the payment note so the webhook can reconcile the
+            charge automatically.
+          </p>
+        </section>
+      </div>
+    </main>
+
+    <script>
+      const form = document.getElementById("cloverForm");
+      const statusBanner = document.getElementById("status");
+      const resultEl = document.getElementById("result");
+      const paymentLink = document.getElementById("paymentLink");
+
+      const params = new URLSearchParams(window.location.search);
+      const state = {
+        locationId: params.get("locationId") || "",
+        companyId: params.get("companyId") || "",
+      };
+
+      function updateFormValues(data) {
+        if (data.locationId) {
+          form.locationId.value = data.locationId;
+        }
+        if (data.companyId) {
+          form.companyId.value = data.companyId;
+        }
+        if (data.config) {
+          const { merchantId, publicKey, liveMode, hasApiToken, configuredAt } =
+            data.config;
+
+          if (merchantId) {
+            form.merchantId.value = merchantId;
+          }
+          if (publicKey) {
+            form.publicKey.value = publicKey;
+          }
+          document.getElementById("mode").value = liveMode ? "live" : "test";
+
+          statusBanner.classList.remove("warning");
+          statusBanner.classList.remove("success");
+          if (configuredAt || hasApiToken || merchantId) {
+            statusBanner.classList.add("success");
+            statusBanner.innerHTML = `✅ Clover credentials last updated <strong>${
+              configuredAt
+                ? new Date(configuredAt).toLocaleString()
+                : "recently"
+            }</strong>.`;
+          }
+        }
+      }
+
+      function updatePaymentLink(locationId) {
+        if (!locationId) {
+          paymentLink.href = "#";
+          paymentLink.setAttribute("aria-disabled", "true");
+          paymentLink.textContent = "Save credentials first";
+          return;
+        }
+
+        const link = new URL("/pay/clover", window.location.origin);
+        link.searchParams.set("locationId", locationId);
+        paymentLink.href = link.toString();
+        paymentLink.textContent = "Open payment form";
+        paymentLink.removeAttribute("aria-disabled");
+      }
+
+      async function loadExistingConfig() {
+        if (!state.locationId) {
+          statusBanner.classList.add("warning");
+          statusBanner.innerHTML =
+            "⚠️ Add your GoHighLevel location ID so we can save the Clover credentials.";
+          return;
+        }
+
+        try {
+          const query = new URLSearchParams({
+            locationId: state.locationId,
+          });
+          if (state.companyId) {
+            query.set("companyId", state.companyId);
+          }
+          const response = await fetch(`/api/setup?${query.toString()}`);
+          if (!response.ok) {
+            throw new Error(`Request failed with status ${response.status}`);
+          }
+          const data = await response.json();
+          updateFormValues(data);
+          updatePaymentLink(data.locationId);
+        } catch (error) {
+          statusBanner.classList.add("warning");
+          statusBanner.innerHTML =
+            "⚠️ We couldn't load stored credentials. You can still submit new ones.";
+          console.warn("Failed to load Clover config", error);
+        }
+      }
+
+      updateFormValues({
+        locationId: state.locationId,
+        companyId: state.companyId,
+      });
+      updatePaymentLink(state.locationId);
+      loadExistingConfig();
+
+      form.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        resultEl.className = "result";
+        resultEl.textContent = "";
+
+        const formData = new FormData(form);
+        const payload = {
+          locationId: formData.get("locationId")?.trim(),
+          companyId: formData.get("companyId")?.trim() || undefined,
+          merchantId: formData.get("merchantId")?.trim(),
+          publicKey: formData.get("publicKey")?.trim(),
+          apiToken: formData.get("apiToken")?.trim(),
+          liveMode: formData.get("mode") === "live",
+        };
+
+        if (!payload.locationId || !payload.merchantId || !payload.apiToken) {
+          resultEl.classList.add("error");
+          resultEl.textContent =
+            "Please provide the location ID, merchant ID, and API token.";
+          return;
+        }
+
+        const submitBtn = form.querySelector('button[type="submit"]');
+        submitBtn.disabled = true;
+
+        try {
+          const response = await fetch("/api/config/save-clover-config", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+          });
+
+          const result = await response.json();
+
+          if (!response.ok || !result.success) {
+            throw new Error(result.error || "Failed to save credentials");
+          }
+
+          resultEl.classList.add("success");
+          resultEl.textContent = result.message ||
+            "Clover credentials saved successfully.";
+          state.locationId = payload.locationId;
+          updatePaymentLink(state.locationId);
+          await loadExistingConfig();
+        } catch (error) {
+          resultEl.classList.add("error");
+          resultEl.textContent = error.message;
+        } finally {
+          submitBtn.disabled = false;
+        }
+      });
+    </script>
+  </body>
+</html>

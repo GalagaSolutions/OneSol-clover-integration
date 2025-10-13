@@ -1,5 +1,5 @@
 // api/webhooks/clover.js
-import { getLocationToken } from "../utils/getLocationToken.js";
+import { getLocationToken } from "../../lib/getLocationToken.js";
 import axios from "axios";
 import { Redis } from "@upstash/redis";
 
@@ -101,15 +101,16 @@ async function getCloverPayment(merchantId, paymentId) {
 
 async function matchPaymentToInvoice(payment) {
   // Strategy 1: Check payment note for invoice ID
-  if (payment.note) {
-    const invoiceMatch = payment.note.match(/(INV-[\w]+|TEST-[\w]+)/i);
-    if (invoiceMatch) {
-      const invoiceId = invoiceMatch[0];
-      const locationId = await findLocationForInvoice(invoiceId);
-      
-      if (locationId) {
-        return { locationId, invoiceId };
-      }
+  const noteInvoice = extractInvoiceIdFromNote(payment.note);
+  if (noteInvoice) {
+    console.log("🧾 Invoice reference detected in Clover note:", noteInvoice);
+    const locationData = await findLocationForInvoice(noteInvoice);
+
+    if (locationData?.locationId) {
+      return {
+        locationId: locationData.locationId,
+        invoiceId: locationData.invoiceId || noteInvoice
+      };
     }
   }
 
@@ -135,10 +136,59 @@ async function matchPaymentToInvoice(payment) {
   return null;
 }
 
+function normalizeInvoiceId(invoiceId) {
+  return String(invoiceId || "").trim().toUpperCase();
+}
+
+function extractInvoiceIdFromNote(note = "") {
+  if (!note) return null;
+
+  const text = note.trim();
+
+  // Direct matches for known prefixes (INV-, TEST-, etc)
+  const invMatch = text.match(/\bINV-[A-Z0-9_-]+\b/i);
+  if (invMatch) {
+    return normalizeInvoiceId(invMatch[0]);
+  }
+
+  const testMatch = text.match(/\bTEST-[A-Z0-9_-]+\b/i);
+  if (testMatch) {
+    return normalizeInvoiceId(testMatch[0]);
+  }
+
+  const invoiceLabelMatch = text.match(/\bINVOICE[\s#:-]*([A-Z0-9_-]+)/i);
+  if (invoiceLabelMatch) {
+    return normalizeInvoiceId(invoiceLabelMatch[1]);
+  }
+
+  // Look for standalone alphanumeric strings with at least 4 characters
+  const genericMatch = text.match(/\b[A-Z0-9_-]{4,}\b/i);
+  if (genericMatch) {
+    return normalizeInvoiceId(genericMatch[0]);
+  }
+
+  return null;
+}
+
 async function findLocationForInvoice(invoiceId) {
-  // For now, return default location
-  // In production, you'd query GHL API to find which location owns this invoice
-  return "cv3mmKLIVdqbZSVeksCW";
+  const normalized = normalizeInvoiceId(invoiceId);
+
+  if (!normalized) {
+    return null;
+  }
+
+  const invoiceKey = `invoice_location_${normalized}`;
+  const cached = await redis.get(invoiceKey);
+
+  if (cached) {
+    const data = typeof cached === "string" ? JSON.parse(cached) : cached;
+    return {
+      locationId: data.locationId,
+      invoiceId: data.invoiceId || invoiceId
+    };
+  }
+
+  return null;
 }
 
 async function storeUnmatchedPayment(payment) {
@@ -152,10 +202,14 @@ async function storeUnmatchedPayment(payment) {
 }
 
 async function updateGHLInvoice(locationId, invoiceId, paymentData) {
+  if (!locationId) {
+    throw new Error("Missing locationId for invoice update");
+  }
+
   const accessToken = await getLocationToken(locationId);
-  
-  const url = `https://services.leadconnectorhq.com/invoices/${invoiceId}/record-payment`;
-  
+
+  const url = `https://services.leadconnectorhq.com/v2/locations/${locationId}/invoices/${invoiceId}/record-payment`;
+
   await axios.post(url, {
     amount: paymentData.amount,
     paymentMode: "custom",
@@ -165,7 +219,8 @@ async function updateGHLInvoice(locationId, invoiceId, paymentData) {
     headers: {
       Authorization: `Bearer ${accessToken}`,
       "Content-Type": "application/json",
-      Version: "2021-07-28"
+      Version: "2021-07-28",
+      "Location-Id": locationId
     }
   });
 }

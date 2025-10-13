@@ -1,10 +1,5 @@
-import { Redis } from "@upstash/redis";
-import { getLocationToken } from "../utils/getLocationToken.js";
-
-const redis = new Redis({
-  url: process.env.storage_KV_REST_API_URL,
-  token: process.env.storage_KV_REST_API_TOKEN,
-});
+import { getLocationToken } from "../../lib/getLocationToken.js";
+import { storeCloverConfig } from "../../lib/clover/config.js";
 
 export default async function handler(req, res) {
   if (req.method !== "POST") {
@@ -26,7 +21,7 @@ export default async function handler(req, res) {
     console.log("   Mode:", liveMode ? "LIVE" : "TEST");
 
     // Store Clover credentials
-    await storeCloverCredentials(locationId, {
+    await storeCloverConfig(locationId, {
       merchantId,
       apiToken,
       publicKey,
@@ -56,10 +51,4 @@ export default async function handler(req, res) {
       error: error.message || "Failed to save configuration",
     });
   }
-}
-
-async function storeCloverCredentials(locationId, credentials) {
-  const key = `clover_config_${locationId}`;
-  await redis.set(key, JSON.stringify(credentials));
-  console.log(`✅ Clover credentials stored for location: ${locationId}`);
 }

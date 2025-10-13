@@ -21,17 +21,27 @@ export default async function handler(req, res) {
       });
     }
 
+    const normalizedInvoiceId = String(invoiceId).trim().toUpperCase();
+
     console.log("📝 Tracking invoice:", invoiceId, "Amount:", amount);
 
     const amountInCents = Math.round(amount * 100);
     const key = `pending_invoice_${amountInCents}`;
-    
+
     await redis.set(key, JSON.stringify({
       locationId,
       invoiceId,
       amount: amountInCents,
       timestamp: Date.now()
     }), { ex: 3600 }); // 1 hour
+
+    // Also store a direct invoice -> location mapping for note based matching
+    const invoiceKey = `invoice_location_${normalizedInvoiceId}`;
+    await redis.set(invoiceKey, JSON.stringify({
+      locationId,
+      invoiceId,
+      timestamp: Date.now()
+    }), { ex: 86400 * 7 }); // keep for 7 days
 
     console.log("✅ Invoice tracked");
 
