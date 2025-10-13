@@ -1,9 +1,4 @@
 {
-  "functions": {
-    "lib/**/*": {
-      "runtime": false
-    }
-  },
   "rewrites": [
     { "source": "/oauth/callback", "destination": "/api/core/callback" },
     { "source": "/setup", "destination": "/api/core/setup" },
@@ -14,16 +9,16 @@
     { "source": "/config/:action", "destination": "/api/core/:action" }
   ],
   "functions": {
+    "lib/**/*": {
+      "runtime": false
+    },
     "api/core/[action].js": {
-      "memory": 1024,
       "maxDuration": 10
     },
     "api/payment/[action].js": {
-      "memory": 1024,
       "maxDuration": 10
     },
     "api/webhooks/clover.js": {
-      "memory": 1024,
       "maxDuration": 10
     }
   }
