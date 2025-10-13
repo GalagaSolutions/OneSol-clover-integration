@@ -1,8 +1,23 @@
 {
   "rewrites": [
-    { "source": "/oauth/callback", "destination": "/api/auth/callback" },
-    { "source": "/setup", "destination": "/api/auth/setup" },
-    { "source": "/pay/:action", "destination": "/api/payment/:action" },
-    { "source": "/system/:action", "destination": "/api/system/:action" }
-  ]
+    { "source": "/oauth/callback", "destination": "/api/core/callback" },
+    { "source": "/setup", "destination": "/api/core/setup" },
+    { "source": "/system/:type", "destination": "/api/core/:type" },
+    { "source": "/pay/:type", "destination": "/api/payment/:type" },
+    { "source": "/webhooks/clover", "destination": "/api/webhooks/clover" }
+  ],
+  "functions": {
+    "api/core/[action].js": {
+      "memory": 1024,
+      "maxDuration": 10
+    },
+    "api/payment/[action].js": {
+      "memory": 1024,
+      "maxDuration": 10
+    },
+    "api/webhooks/clover.js": {
+      "memory": 1024,
+      "maxDuration": 10
+    }
+  }
 }
