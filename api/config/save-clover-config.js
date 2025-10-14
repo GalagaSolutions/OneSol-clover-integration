@@ -183,3 +183,85 @@ function generateApiKey() {
 function generatePublishableKey() {
   return 'pk_' + Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
 }
+
+async function createIntegrationAssociation(locationId, accessToken) {
+  const baseUrl = process.env.VERCEL_URL || 'api.onesolutionapp.com';
+  
+  // Try method 1: Query parameter
+  const url = `https://services.leadconnectorhq.com/payments/custom-provider/provider?locationId=${locationId}`;
+  
+  const payload = {
+    name: "Clover by PNC",
+    description: "Accept payments via Clover devices and online",
+    imageUrl: "https://www.clover.com/assets/images/public-site/press/clover_logo_primary.png",
+    queryUrl: `https://${baseUrl}/api/payment/query`,
+    paymentsUrl: `https://${baseUrl}/payment-form`,
+  };
+
+  console.log("📤 Attempt 1: locationId in query parameter");
+  console.log("📤 URL:", url);
+  console.log("📤 Payload:", JSON.stringify(payload, null, 2));
+
+  try {
+    const response = await axios.post(url, payload, {
+      headers: {
+        "Authorization": `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
+        "Version": "2021-07-28",
+      },
+    });
+
+    console.log("✅ Integration created!");
+    console.log("✅ Response:", JSON.stringify(response.data));
+    return response.data;
+    
+  } catch (error1) {
+    console.error("❌ Query param method failed:", error1.response?.status);
+    console.log("📤 Attempt 2: locationId in body as string");
+    
+    // Try method 2: In body with explicit string conversion
+    const url2 = "https://services.leadconnectorhq.com/payments/custom-provider/provider";
+    const payload2 = {
+      locationId: String(locationId).trim(),
+      ...payload
+    };
+    
+    try {
+      const response2 = await axios.post(url2, payload2, {
+        headers: {
+          "Authorization": `Bearer ${accessToken}`,
+          "Content-Type": "application/json",
+          "Version": "2021-07-28",
+        },
+      });
+      
+      console.log("✅ Integration created (method 2)!");
+      return response2.data;
+      
+    } catch (error2) {
+      console.error("❌ Body method also failed:", error2.response?.status);
+      console.log("📤 Attempt 3: Using /connect endpoint");
+      
+      // Try method 3: Original connect endpoint
+      const url3 = "https://services.leadconnectorhq.com/payments/custom-provider/connect";
+      
+      try {
+        const response3 = await axios.post(url3, payload2, {
+          headers: {
+            "Authorization": `Bearer ${accessToken}`,
+            "Content-Type": "application/json",
+            "Version": "2021-07-28",
+          },
+        });
+        
+        console.log("✅ Integration created (method 3)!");
+        return response3.data;
+        
+      } catch (error3) {
+        console.error("❌ All methods failed");
+        console.error("Final error:", error3.response?.data);
+        throw error3;
+      }
+    }
+  }
+}
