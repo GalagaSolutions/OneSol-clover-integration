@@ -1,5 +1,3 @@
-// api/oauth/callback.js
-// CORRECTED VERSION with proper scope checking
 import axios from "axios";
 import { Redis } from "@upstash/redis";
 
@@ -22,13 +20,11 @@ export default async function handler(req, res) {
     // Exchange code for tokens
     const tokenData = await exchangeCodeForToken(code);
     
-    // Extract IDs from token response
     const locationId = tokenData.locationId || tokenData.location_id;
     const companyId = tokenData.companyId || tokenData.company_id;
-    const userId = tokenData.userId || tokenData.user_id;
     
     if (!locationId) {
-      console.error("❌ No locationId in token response");
+      console.error("❌ No locationId found in token response:", tokenData);
       throw new Error("locationId not found in OAuth response");
     }
 
@@ -39,79 +35,46 @@ export default async function handler(req, res) {
       scope,
     } = tokenData;
 
-    // Validate required scopes - updated to match GHL's actual scope names
-    const requiredScopes = ['invoices.write', 'payments/orders.write'];
-    const tokenScopes = scope.split(' ');
-    const missingScopes = requiredScopes.filter(s => !tokenScopes.includes(s));
-    
-    if (missingScopes.length > 0) {
-      console.error("❌ Missing required scopes:", missingScopes);
-      console.log("   Available scopes:", scope);
-      throw new Error(`Missing required scopes: ${missingScopes.join(', ')}`);
-    }
-
-    console.log("✅ OAuth tokens received!");
+    console.log("✅ OAuth Success!");
     console.log("   Location ID:", locationId);
     console.log("   Company ID:", companyId);
-    console.log("   User ID:", userId);
-    console.log("   Scopes:", scope);
-    console.log("   Expires in:", expires_in, "seconds");
 
-    // Store tokens in Redis
+    // Store tokens
     await storeLocationTokens(locationId, {
       accessToken: access_token,
       refreshToken: refresh_token,
-      expiresAt: Date.now() + (expires_in * 1000),
+      expiresAt: Date.now() + expires_in * 1000,
       companyId: companyId,
       locationId: locationId,
-      userId: userId,
       scope: scope,
       installedAt: new Date().toISOString(),
     });
 
-    console.log("✅ Tokens stored in Redis");
-
-    // Check if Clover is already configured for this location
-    const cloverConfigured = await isCloverConfigured(locationId);
-    
-    if (cloverConfigured) {
-      console.log("✅ Clover already configured - redirecting to GHL");
-      
-      // Redirect to GHL Payments Integrations page
-      const redirectUrl = `https://app.gohighlevel.com/location/${locationId}/settings/payments/integrations`;
-      return res.redirect(302, redirectUrl);
+    // CRITICAL: Create Integration using V2 API format
+    console.log("📤 Creating payment integration...");
+    try {
+      await createPaymentIntegration(locationId, access_token);
+      console.log("✅ Payment integration created");
+    } catch (error) {
+      console.error("⚠️ Integration creation failed:", error.message);
+      console.error("   Response:", error.response?.data);
     }
 
-    console.log("⚠️  Clover not configured - redirecting to setup page");
-
-    // Build setup page URL with location context
-    const baseUrl = process.env.VERCEL_URL 
-      ? `https://${process.env.VERCEL_URL}`
-      : 'https://api.onesolutionapp.com';
+    // Redirect to setup page to collect Clover credentials
+    const baseUrl = process.env.VERCEL_URL || 'api.onesolutionapp.com';
+    const setupUrl = `https://${baseUrl}/setup?locationId=${locationId}&companyId=${companyId}`;
     
-    // Redirect to the enhanced setup page
-    const setupUrl = `${baseUrl}/setup?locationId=${locationId}&companyId=${companyId || ''}&state=clover_setup`;
-    
-    console.log("🔄 Redirecting to Clover setup:", setupUrl);
+    console.log("🔄 Redirecting to setup:", setupUrl);
     return res.redirect(302, setupUrl);
 
   } catch (error) {
-    console.error("❌ OAuth callback error:");
-    console.error("   Message:", error.message);
-    console.error("   Response:", error.response?.data);
-    console.error("   Stack:", error.stack);
-    
-    // Redirect to GHL error page
+    console.error("❌ OAuth callback error:", error.response?.data || error.message);
     return res.redirect(302, "https://app.gohighlevel.com/oauth/error");
   }
 }
 
-/**
- * Exchange authorization code for access/refresh tokens
- */
 async function exchangeCodeForToken(code) {
   const tokenUrl = "https://services.leadconnectorhq.com/oauth/token";
-  
   const payload = {
     client_id: process.env.GHL_CLIENT_ID,
     client_secret: process.env.GHL_CLIENT_SECRET,
@@ -120,82 +83,53 @@ async function exchangeCodeForToken(code) {
     redirect_uri: process.env.OAUTH_REDIRECT_URI,
   };
 
-  console.log("📤 Token exchange request:");
-  console.log("   URL:", tokenUrl);
-  console.log("   Client ID:", payload.client_id?.substring(0, 10) + "...");
-  console.log("   Redirect URI:", payload.redirect_uri);
-
   try {
-    // Try JSON content-type first (preferred)
     const response = await axios.post(tokenUrl, payload, {
-      headers: { 
-        "Content-Type": "application/json",
-        "Accept": "application/json",
-      },
+      headers: { "Content-Type": "application/json" },
     });
-    
-    console.log("✅ Token exchange successful (JSON)");
+    console.log("✅ Token exchange successful");
     return response.data;
-    
-  } catch (jsonError) {
-    console.log("⚠️  JSON exchange failed, trying form-encoded...");
-    console.log("   Error:", jsonError.response?.status, jsonError.response?.data);
-    
-    // Fallback to form-encoded (some OAuth servers prefer this)
-    try {
-      const params = new URLSearchParams(payload);
-      const response = await axios.post(tokenUrl, params.toString(), {
-        headers: { 
-          "Content-Type": "application/x-www-form-urlencoded",
-          "Accept": "application/json",
-        },
-      });
-      
-      console.log("✅ Token exchange successful (form-encoded)");
-      return response.data;
-      
-    } catch (formError) {
-      console.error("❌ Both token exchange methods failed");
-      console.error("   JSON error:", jsonError.response?.data);
-      console.error("   Form error:", formError.response?.data);
-      throw formError;
-    }
+  } catch (error) {
+    console.log("⚠️ JSON exchange failed, trying form-encoded...");
+    const params = new URLSearchParams(payload);
+    const response = await axios.post(tokenUrl, params.toString(), {
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    });
+    console.log("✅ Token exchange successful (form-encoded)");
+    return response.data;
   }
 }
 
-/**
- * Store OAuth tokens in Redis
- */
 async function storeLocationTokens(locationId, tokenData) {
   const key = `ghl_location_${locationId}`;
-  
   await redis.set(key, JSON.stringify(tokenData));
-  
-  console.log(`✅ Tokens stored: ${key}`);
-  console.log("   Expires:", new Date(tokenData.expiresAt).toISOString());
+  console.log(`✅ Tokens stored for location: ${locationId}`);
 }
 
-/**
- * Check if Clover is already configured for this location
- */
-async function isCloverConfigured(locationId) {
-  try {
-    const key = `clover_config_${locationId}`;
-    const config = await redis.get(key);
-    
-    if (!config) {
-      console.log("   No Clover config found");
-      return false;
-    }
-    
-    const parsed = typeof config === 'string' ? JSON.parse(config) : config;
-    const hasRequiredFields = !!(parsed.merchantId && parsed.apiToken);
-    
-    console.log("   Clover config exists:", hasRequiredFields);
-    return hasRequiredFields;
-    
-  } catch (error) {
-    console.error("   Error checking Clover config:", error.message);
-    return false;
-  }
+async function createPaymentIntegration(locationId, accessToken) {
+  const baseUrl = process.env.VERCEL_URL || 'api.onesolutionapp.com';
+  const url = "https://services.leadconnectorhq.com/payments/custom-provider/connect";
+  
+  // V2 API format from documentation
+  const payload = {
+    name: "Clover by PNC",
+    description: "Accept payments via Clover devices and online",
+    imageUrl: "https://www.clover.com/assets/images/public-site/press/clover_logo_primary.png",
+    locationId: locationId,
+    queryUrl: `https://${baseUrl}/api/payment/query`,
+    paymentsUrl: `https://${baseUrl}/payment-form`,
+  };
+
+  console.log("📤 Integration payload:", JSON.stringify(payload, null, 2));
+
+  const response = await axios.post(url, payload, {
+    headers: {
+      "Authorization": `Bearer ${accessToken}`,
+      "Content-Type": "application/json",
+      "Version": "2021-07-28",
+    },
+  });
+
+  console.log("✅ Integration response:", JSON.stringify(response.data));
+  return response.data;
 }
