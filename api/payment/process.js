@@ -19,7 +19,6 @@ export default async function handler(req, res) {
       customerName,
     } = req.body;
 
-    // Validate required fields
     if (!locationId || !amount || !source) {
       return res.status(400).json({
         success: false,
@@ -32,7 +31,6 @@ export default async function handler(req, res) {
     console.log("   Amount:", amount, currency.toUpperCase());
     console.log("   Invoice ID:", invoiceId);
 
-    // Create charge in Clover (this is working! ✅)
     const cloverResult = await createCloverCharge({
       amount,
       currency,
@@ -58,7 +56,6 @@ export default async function handler(req, res) {
 
     console.log("✅ Payment successful in Clover!");
 
-    // Try to update GHL invoice, but don't fail if it doesn't work
     let invoiceUpdated = false;
     if (invoiceId) {
       try {
@@ -74,16 +71,11 @@ export default async function handler(req, res) {
         console.error("⚠️ Error details:", {
           status: error.response?.status,
           statusText: error.response?.statusText,
-          data: error.response?.data,
-          url: error.config?.url
+          data: error.response?.data
         });
-        // Don't fail the payment - just log it
-        console.log("💡 Payment still succeeded, but couldn't update GHL invoice");
-        console.log("💡 User needs to complete OAuth flow to enable invoice updates");
       }
     }
 
-    // Return success response (payment worked!)
     return res.status(200).json({
       success: true,
       transactionId: cloverResult.transactionId,
@@ -93,12 +85,11 @@ export default async function handler(req, res) {
       card: cloverResult.card,
       message: "Payment processed successfully",
       invoiceUpdated: invoiceUpdated,
-      warning: !invoiceUpdated && invoiceId ? "Payment successful but invoice not updated. Complete OAuth setup." : null
+      warning: !invoiceUpdated && invoiceId ? "Payment successful but invoice not updated. Check logs for details." : null
     });
 
   } catch (error) {
     console.error("❌ Payment processing error:", error);
-    
     return res.status(500).json({
       success: false,
       error: "Payment processing failed",
@@ -113,41 +104,26 @@ async function recordPaymentInGHL(locationId, invoiceId, accessToken, paymentDat
   console.log("   Amount:", paymentData.amount);
   console.log("   Transaction ID:", paymentData.transactionId);
   
-  // Use the payment orders API to record the transaction
-  const paymentUrl = "https://services.leadconnectorhq.com/payments/orders";
+  // Use the Invoice record-payment endpoint
+  const invoiceUrl = `https://services.leadconnectorhq.com/invoices/${invoiceId}/record-payment`;
   
   const payload = {
-    altId: invoiceId,
-    altType: "invoice",
-    amount: paymentData.amount * 100, // Convert to cents
-    currency: "usd",
-    status: "succeeded",
-    externalTransactionId: paymentData.transactionId,
-    transactionType: "charge",
-    paymentMode: "live"
+    amount: paymentData.amount,
+    paymentMode: "custom",
+    transactionId: paymentData.transactionId,
+    notes: `Payment processed via Clover - Transaction: ${paymentData.transactionId}`
   };
   
   console.log("📤 Payment payload:", JSON.stringify(payload, null, 2));
   
-  try {
-    const response = await axios.post(paymentUrl, payload, {
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        "Content-Type": "application/json",
-        Version: "2021-07-28",
-      },
-    });
-    
-    console.log("✅ Payment recorded in GHL");
-    console.log("   Response:", JSON.stringify(response.data));
-    
-  } catch (error) {
-    console.error("⚠️ Failed to record payment:", {
-      status: error.response?.status,
-      statusText: error.response?.statusText,
-      data: error.response?.data,
-      url: error.config?.url
-    });
-    throw error;
-  }
+  const response = await axios.post(invoiceUrl, payload, {
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": "application/json",
+      Version: "2021-07-28",
+    },
+  });
+  
+  console.log("✅ Payment recorded in GHL");
+  console.log("   Response:", JSON.stringify(response.data));
 }
