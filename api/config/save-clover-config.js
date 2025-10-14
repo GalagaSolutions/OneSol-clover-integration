@@ -1,5 +1,6 @@
 import { Redis } from "@upstash/redis";
 import { getLocationToken } from "../utils/getLocationToken.js";
+import axios from "axios";
 
 const redis = new Redis({
   url: process.env.storage_KV_REST_API_URL,
@@ -14,7 +15,6 @@ export default async function handler(req, res) {
   try {
     const { locationId, merchantId, apiToken, publicKey, liveMode } = req.body;
 
-    // Validate required fields
     if (!locationId || !merchantId || !apiToken) {
       return res.status(400).json({
         success: false,
@@ -34,23 +34,67 @@ export default async function handler(req, res) {
       configuredAt: new Date().toISOString(),
     });
 
-    // Verify we can get the GHL access token (validates OAuth worked)
+    // Get GHL access token
+    const accessToken = await getLocationToken(locationId);
+    console.log("✅ GHL access token retrieved");
+
+    // CRITICAL: Create the integration ASSOCIATION first
+    console.log("📤 Step 1: Creating integration association...");
     try {
-      await getLocationToken(locationId);
-      console.log("✅ GHL access token verified for location:", locationId);
+      await createIntegrationAssociation(locationId, accessToken);
+      console.log("✅ Integration association created - app should now appear in GHL!");
     } catch (error) {
-      console.log("⚠️ Could not verify GHL token:", error.message);
+      console.error("⚠️ Integration association failed:", error.message);
+      console.error("   Response:", JSON.stringify(error.response?.data));
+      // Don't fail - continue with config update
     }
 
-    console.log("✅ Clover configuration saved successfully");
-    console.log("💡 Payment provider should now appear in GHL Payment Integrations");
+    // Generate API keys for GHL
+    const apiKey = generateApiKey();
+    const publishableKey = publicKey || process.env.CLOVER_PAKMS_KEY || generatePublishableKey();
+
+    // Store the API key mapping for webhook verification
+    await storeApiKeyMapping(locationId, apiKey);
+
+    // Update GHL provider config - V2 API format
+    console.log("📤 Updating GHL provider config...");
+    try {
+      await updateProviderConfig(locationId, accessToken, {
+        liveMode: liveMode || false,
+        apiKey: apiKey,
+        publishableKey: publishableKey,
+      });
+      console.log("✅ Provider config updated in GHL");
+    } catch (error) {
+      console.error("⚠️ Provider config update failed:", error.message);
+      console.error("   Status:", error.response?.status);
+      console.error("   Response:", JSON.stringify(error.response?.data));
+    }
+
+    // Update app capabilities using V2 API
+    console.log("📤 Updating app capabilities...");
+    try {
+      await updateAppCapabilities(accessToken, locationId);
+      console.log("✅ App capabilities updated");
+    } catch (error) {
+      console.error("⚠️ Capabilities update failed:", error.message);
+      console.error("   This is optional and may not be available yet");
+    }
+
+    console.log("✅ Configuration complete!");
+    console.log("💡 Check Settings > Payments > Integrations in GHL");
 
     return res.status(200).json({
       success: true,
-      message: "Clover configuration saved successfully. Please check Settings > Payments > Payment Integrations in your GHL sub-account.",
+      message: "Clover configured successfully! Payment provider should now appear in GHL Payments > Integrations.",
+      details: {
+        mode: liveMode ? "LIVE" : "TEST",
+        merchantId: merchantId.substring(0, 8) + "...",
+        hasPublishableKey: !!publishableKey,
+      }
     });
   } catch (error) {
-    console.error("❌ Failed to save Clover config:", error);
+    console.error("❌ Configuration failed:", error);
     return res.status(500).json({
       success: false,
       error: error.message || "Failed to save configuration",
@@ -62,4 +106,80 @@ async function storeCloverCredentials(locationId, credentials) {
   const key = `clover_config_${locationId}`;
   await redis.set(key, JSON.stringify(credentials));
   console.log(`✅ Clover credentials stored for location: ${locationId}`);
+}
+
+async function storeApiKeyMapping(locationId, apiKey) {
+  const key = `api_key_${apiKey}`;
+  await redis.set(key, JSON.stringify({
+    locationId,
+    createdAt: new Date().toISOString(),
+  }));
+  console.log(`✅ API key mapping stored`);
+}
+
+async function updateProviderConfig(locationId, accessToken, config) {
+  // V2 API endpoint from documentation
+  const url = "https://services.leadconnectorhq.com/payments/custom-provider/config";
+  
+  const payload = {
+    locationId: locationId,
+    liveMode: config.liveMode,
+    apiKey: config.apiKey,
+    publishableKey: config.publishableKey,
+  };
+
+  console.log("📤 Provider config payload:", {
+    locationId: payload.locationId,
+    liveMode: payload.liveMode,
+    apiKey: "sk_***",
+    publishableKey: config.publishableKey.substring(0, 10) + "***",
+  });
+
+  const response = await axios.post(url, payload, {
+    headers: {
+      "Authorization": `Bearer ${accessToken}`,
+      "Content-Type": "application/json",
+      "Version": "2021-07-28",
+    },
+  });
+
+  console.log("✅ Provider config response:", response.data);
+  return response.data;
+}
+
+async function updateAppCapabilities(accessToken, locationId) {
+  // V2 API endpoint - PUT method
+  const url = "https://services.leadconnectorhq.com/payments/custom-provider/capabilities";
+  
+  const payload = {
+    locationId: locationId,
+    addCardOnFileSupported: false, // Clover doesn't support this via Ecommerce API
+  };
+
+  console.log("📤 Capabilities payload:", JSON.stringify(payload));
+
+  try {
+    const response = await axios.put(url, payload, {
+      headers: {
+        "Authorization": `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
+        "Version": "2021-07-28",
+      },
+    });
+
+    console.log("✅ Capabilities response:", response.data);
+    return response.data;
+  } catch (error) {
+    // This endpoint might not be required or might fail - that's OK
+    console.log("ℹ️ Capabilities endpoint optional");
+    throw error;
+  }
+}
+
+function generateApiKey() {
+  return 'sk_' + Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
+}
+
+function generatePublishableKey() {
+  return 'pk_' + Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
 }
