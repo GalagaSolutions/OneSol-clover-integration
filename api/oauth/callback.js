@@ -1,5 +1,5 @@
 // api/oauth/callback.js
-// CORRECTED VERSION following official GHL V2 OAuth flow
+// CORRECTED VERSION with proper scope checking
 import axios from "axios";
 import { Redis } from "@upstash/redis";
 
@@ -39,13 +39,14 @@ export default async function handler(req, res) {
       scope,
     } = tokenData;
 
-    // Validate required scopes
-    const requiredScopes = ['payments.write', 'invoices.write'];
+    // Validate required scopes - updated to match GHL's actual scope names
+    const requiredScopes = ['invoices.write', 'payments/orders.write'];
     const tokenScopes = scope.split(' ');
     const missingScopes = requiredScopes.filter(s => !tokenScopes.includes(s));
     
     if (missingScopes.length > 0) {
       console.error("❌ Missing required scopes:", missingScopes);
+      console.log("   Available scopes:", scope);
       throw new Error(`Missing required scopes: ${missingScopes.join(', ')}`);
     }
 
@@ -86,10 +87,10 @@ export default async function handler(req, res) {
     // Build setup page URL with location context
     const baseUrl = process.env.VERCEL_URL 
       ? `https://${process.env.VERCEL_URL}`
-      : process.env.BASE_URL;
+      : 'https://api.onesolutionapp.com';
     
     // Redirect to the enhanced setup page
-    const setupUrl = `${baseUrl}/api/setup?locationId=${locationId}&companyId=${companyId || ''}&state=clover_setup`;
+    const setupUrl = `${baseUrl}/setup?locationId=${locationId}&companyId=${companyId || ''}&state=clover_setup`;
     
     console.log("🔄 Redirecting to Clover setup:", setupUrl);
     return res.redirect(302, setupUrl);
