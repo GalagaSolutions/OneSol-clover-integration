@@ -212,13 +212,25 @@ async function getInstallerDetails(accessToken) {
   return response.data;
 }
 
+function decodeJWT(token) {
+  // Decode JWT (just the payload, no verification needed here)
+  const parts = token.split('.');
+  if (parts.length !== 3) {
+    throw new Error('Invalid JWT format');
+  }
+  
+  const payload = parts[1];
+  const decoded = Buffer.from(payload, 'base64').toString('utf-8');
+  return JSON.parse(decoded);
+}
+
 async function createPaymentIntegration(locationId, accessToken) {
   const baseUrl = process.env.VERCEL_URL || 'api.onesolutionapp.com';
-  const url = "https://services.leadconnectorhq.com/payments/custom-provider/connect";
   
-  // V2 API format - ensure locationId is explicitly a string
+  // Try the integration provider endpoint instead
+  const url = `https://services.leadconnectorhq.com/payments/integrations/provider/${locationId}/connect`;
+  
   const payload = {
-    locationId: String(locationId), // Explicitly convert to string
     name: "Clover by PNC",
     description: "Accept payments via Clover devices and online",
     imageUrl: "https://www.clover.com/assets/images/public-site/press/clover_logo_primary.png",
@@ -226,16 +238,41 @@ async function createPaymentIntegration(locationId, accessToken) {
     paymentsUrl: `https://${baseUrl}/payment-form`,
   };
 
-  console.log("📤 Integration payload:", JSON.stringify(payload, null, 2));
+  console.log("📤 Integration payload (v2):", JSON.stringify(payload, null, 2));
+  console.log("📤 URL:", url);
 
-  const response = await axios.post(url, payload, {
-    headers: {
-      "Authorization": `Bearer ${accessToken}`,
-      "Content-Type": "application/json",
-      "Version": "2021-07-28",
-    },
-  });
+  try {
+    const response = await axios.post(url, payload, {
+      headers: {
+        "Authorization": `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
+        "Version": "2021-07-28",
+      },
+    });
 
-  console.log("✅ Integration response:", JSON.stringify(response.data));
-  return response.data;
+    console.log("✅ Integration response:", JSON.stringify(response.data));
+    return response.data;
+  } catch (error) {
+    console.error("❌ Integration failed with URL in path, trying in body...");
+    
+    // Fallback: Try original endpoint with locationId in body
+    const fallbackUrl = "https://services.leadconnectorhq.com/payments/custom-provider/connect";
+    const fallbackPayload = {
+      ...payload,
+      locationId: String(locationId)
+    };
+    
+    console.log("📤 Fallback payload:", JSON.stringify(fallbackPayload, null, 2));
+    
+    const response2 = await axios.post(fallbackUrl, fallbackPayload, {
+      headers: {
+        "Authorization": `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
+        "Version": "2021-07-28",
+      },
+    });
+    
+    console.log("✅ Integration response (fallback):", JSON.stringify(response2.data));
+    return response2.data;
+  }
 }
