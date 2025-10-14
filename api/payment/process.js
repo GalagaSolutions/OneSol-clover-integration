@@ -63,11 +63,13 @@ export default async function handler(req, res) {
         await recordPaymentInGHL(locationId, invoiceId, accessToken, {
           amount,
           transactionId: cloverResult.transactionId,
+          customerEmail,
+          customerName,
         });
-        console.log("✅ Payment recorded in GHL invoice");
+        console.log("✅ Payment recorded in GHL");
         invoiceUpdated = true;
       } catch (error) {
-        console.error("⚠️ Failed to update GHL invoice:", error.message);
+        console.error("⚠️ Failed to update GHL:", error.message);
         console.error("⚠️ Error details:", {
           status: error.response?.status,
           statusText: error.response?.statusText,
@@ -86,7 +88,7 @@ export default async function handler(req, res) {
       card: cloverResult.card,
       message: "Payment processed successfully",
       invoiceUpdated: invoiceUpdated,
-      warning: !invoiceUpdated && invoiceId ? "Payment successful but invoice not updated. This may be a permissions issue." : null
+      warning: !invoiceUpdated && invoiceId ? "Payment successful. Invoice update may require manual verification." : null
     });
 
   } catch (error) {
@@ -100,27 +102,38 @@ export default async function handler(req, res) {
 }
 
 async function recordPaymentInGHL(locationId, invoiceId, accessToken, paymentData) {
-  console.log("📝 Recording payment in GHL");
+  console.log("📝 Recording payment in GHL using Custom Provider API");
+  console.log("   Location ID:", locationId);
   console.log("   Invoice ID:", invoiceId);
   console.log("   Amount:", paymentData.amount);
   console.log("   Transaction ID:", paymentData.transactionId);
   
-  // Try method 1: Direct invoice record-payment endpoint
-  const invoiceUrl = `https://services.leadconnectorhq.com/invoices/${invoiceId}/record-payment`;
+  // Use the Custom Provider Payment API
+  const customProviderUrl = "https://services.leadconnectorhq.com/payments/custom-provider/record";
   
   const payload = {
-    amount: paymentData.amount,
-    paymentMode: "custom",
+    locationId: locationId,
+    invoiceId: invoiceId,
+    amount: Math.round(paymentData.amount * 100), // Convert to cents
+    currency: "usd",
     transactionId: paymentData.transactionId,
-    notes: `Payment processed via Clover - Transaction: ${paymentData.transactionId}`
+    paymentMode: "live",
+    status: "succeeded",
+    provider: "clover",
+    metadata: {
+      customerEmail: paymentData.customerEmail,
+      customerName: paymentData.customerName,
+      processor: "clover",
+      source: "custom_payment_form"
+    }
   };
   
-  console.log("📤 Attempting Method 1: Invoice record-payment endpoint");
-  console.log("   URL:", invoiceUrl);
+  console.log("📤 Custom Provider API Request");
+  console.log("   URL:", customProviderUrl);
   console.log("   Payload:", JSON.stringify(payload, null, 2));
   
   try {
-    const response = await axios.post(invoiceUrl, payload, {
+    const response = await axios.post(customProviderUrl, payload, {
       headers: {
         Authorization: `Bearer ${accessToken}`,
         "Content-Type": "application/json",
@@ -128,20 +141,35 @@ async function recordPaymentInGHL(locationId, invoiceId, accessToken, paymentDat
       },
     });
     
-    console.log("✅ Payment recorded in GHL (Method 1)");
+    console.log("✅ Payment recorded via Custom Provider API");
     console.log("   Response:", JSON.stringify(response.data));
     return;
     
   } catch (error) {
-    console.log("❌ Method 1 failed:", error.response?.status, error.response?.data?.message);
+    console.error("❌ Custom Provider API failed:", error.response?.status, error.response?.data);
     
-    // Try method 2: Using the v2 API
-    console.log("📤 Attempting Method 2: V2 Invoices API");
+    // If custom provider fails, try the basic payments/orders endpoint
+    console.log("📤 Attempting fallback: Payments Orders API");
     
-    const v2Url = `https://services.leadconnectorhq.com/invoices/schedule/${invoiceId}/record-manual-payment`;
+    const ordersUrl = "https://services.leadconnectorhq.com/payments/orders";
+    
+    const ordersPayload = {
+      locationId: locationId,
+      amount: Math.round(paymentData.amount * 100),
+      currency: "usd",
+      status: "succeeded",
+      externalTransactionId: paymentData.transactionId,
+      transactionType: "charge",
+      paymentMode: "live",
+      invoiceId: invoiceId,
+      metadata: {
+        provider: "clover",
+        processor: "clover_integration"
+      }
+    };
     
     try {
-      const response2 = await axios.post(v2Url, payload, {
+      const response2 = await axios.post(ordersUrl, ordersPayload, {
         headers: {
           Authorization: `Bearer ${accessToken}`,
           "Content-Type": "application/json",
@@ -149,43 +177,12 @@ async function recordPaymentInGHL(locationId, invoiceId, accessToken, paymentDat
         },
       });
       
-      console.log("✅ Payment recorded in GHL (Method 2)");
+      console.log("✅ Payment recorded via Orders API");
       console.log("   Response:", JSON.stringify(response2.data));
-      return;
       
     } catch (error2) {
-      console.log("❌ Method 2 failed:", error2.response?.status, error2.response?.data?.message);
-      
-      // Try method 3: Text endpoint
-      console.log("📤 Attempting Method 3: Text-based endpoint");
-      
-      const textPayload = {
-        amount: paymentData.amount,
-        paymentMethod: "custom",
-        externalTransactionId: paymentData.transactionId,
-        note: `Payment via Clover - ${paymentData.transactionId}`
-      };
-      
-      try {
-        const response3 = await axios.post(invoiceUrl, textPayload, {
-          headers: {
-            Authorization: `Bearer ${accessToken}`,
-            "Content-Type": "application/json",
-            Version: "2021-07-28",
-          },
-        });
-        
-        console.log("✅ Payment recorded in GHL (Method 3)");
-        console.log("   Response:", JSON.stringify(response3.data));
-        return;
-        
-      } catch (error3) {
-        console.error("❌ All methods failed");
-        console.error("   Method 1 error:", error.response?.data);
-        console.error("   Method 2 error:", error2.response?.data);
-        console.error("   Method 3 error:", error3.response?.data);
-        throw error; // Throw original error
-      }
+      console.error("❌ Orders API also failed:", error2.response?.status, error2.response?.data);
+      throw error; // Throw original error
     }
   }
 }
