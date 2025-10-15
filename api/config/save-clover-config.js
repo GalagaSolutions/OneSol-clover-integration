@@ -25,7 +25,7 @@ export default async function handler(req, res) {
     console.log("💾 Saving Clover configuration for location:", locationId);
     console.log("   Mode:", liveMode ? "LIVE" : "TEST");
 
-    // Store Clover credentials
+    // Store Clover credentials in Redis
     await storeCloverCredentials(locationId, {
       merchantId,
       apiToken,
@@ -36,65 +36,23 @@ export default async function handler(req, res) {
 
     // Get GHL access token
     const accessToken = await getLocationToken(locationId);
-    console.log("✅ GHL access token retrieved");
 
-    // CRITICAL: Create the integration ASSOCIATION first
-    console.log("📤 Step 1: Creating integration association...");
-    try {
-      await createIntegrationAssociation(locationId, accessToken);
-      console.log("✅ Integration association created - app should now appear in GHL!");
-    } catch (error) {
-      console.error("⚠️ Integration association failed:", error.message);
-      console.error("   Response:", JSON.stringify(error.response?.data));
-      // Don't fail - continue with config update
-    }
+    // 🔥 THIS IS THE KEY PART - Call GHL's Connect Config API
+    // This enables test/live mode in the GHL UI
+    await updateGHLPaymentConfig(locationId, accessToken, {
+      apiKey: apiToken,
+      publishableKey: publicKey || merchantId,
+      liveMode: liveMode
+    });
 
-    // Generate API keys for GHL
-    const apiKey = generateApiKey();
-    const publishableKey = publicKey || process.env.CLOVER_PAKMS_KEY || generatePublishableKey();
-
-    // Store the API key mapping for webhook verification
-    await storeApiKeyMapping(locationId, apiKey);
-
-    // Update GHL provider config - V2 API format
-    console.log("📤 Updating GHL provider config...");
-    try {
-      await updateProviderConfig(locationId, accessToken, {
-        liveMode: liveMode || false,
-        apiKey: apiKey,
-        publishableKey: publishableKey,
-      });
-      console.log("✅ Provider config updated in GHL");
-    } catch (error) {
-      console.error("⚠️ Provider config update failed:", error.message);
-      console.error("   Status:", error.response?.status);
-      console.error("   Response:", JSON.stringify(error.response?.data));
-    }
-
-    // Update app capabilities using V2 API
-    console.log("📤 Updating app capabilities...");
-    try {
-      await updateAppCapabilities(accessToken, locationId);
-      console.log("✅ App capabilities updated");
-    } catch (error) {
-      console.error("⚠️ Capabilities update failed:", error.message);
-      console.error("   This is optional and may not be available yet");
-    }
-
-    console.log("✅ Configuration complete!");
-    console.log("💡 Check Settings > Payments > Integrations in GHL");
+    console.log("✅ Clover configuration saved and GHL config updated!");
 
     return res.status(200).json({
       success: true,
-      message: "Clover configured successfully! Payment provider should now appear in GHL Payments > Integrations.",
-      details: {
-        mode: liveMode ? "LIVE" : "TEST",
-        merchantId: merchantId.substring(0, 8) + "...",
-        hasPublishableKey: !!publishableKey,
-      }
+      message: "Clover configured successfully! You can now use it for payments.",
     });
   } catch (error) {
-    console.error("❌ Configuration failed:", error);
+    console.error("❌ Failed to save Clover config:", error);
     return res.status(500).json({
       success: false,
       error: error.message || "Failed to save configuration",
@@ -108,102 +66,27 @@ async function storeCloverCredentials(locationId, credentials) {
   console.log(`✅ Clover credentials stored for location: ${locationId}`);
 }
 
-async function storeApiKeyMapping(locationId, apiKey) {
-  const key = `api_key_${apiKey}`;
-  await redis.set(key, JSON.stringify({
-    locationId,
-    createdAt: new Date().toISOString(),
-  }));
-  console.log(`✅ API key mapping stored`);
-}
-
-async function updateProviderConfig(locationId, accessToken, config) {
-  // V2 API endpoint from documentation
-  const url = "https://services.leadconnectorhq.com/payments/custom-provider/config";
+async function updateGHLPaymentConfig(locationId, accessToken, config) {
+  console.log("🔧 Updating GHL payment provider config");
+  console.log("   Mode:", config.liveMode ? "LIVE" : "TEST");
+  
+  // This is the API endpoint from GHL docs that enables test/live mode
+  const connectUrl = "https://services.leadconnectorhq.com/payments/custom-provider/connect";
   
   const payload = {
     locationId: locationId,
     liveMode: config.liveMode,
-    apiKey: config.apiKey,
-    publishableKey: config.publishableKey,
+    // These keys enable the payment provider in GHL
+    [config.liveMode ? "live" : "test"]: {
+      apiKey: config.apiKey,
+      publishableKey: config.publishableKey
+    }
   };
 
-  console.log("📤 Provider config payload:", {
-    locationId: payload.locationId,
-    liveMode: payload.liveMode,
-    apiKey: "sk_***",
-    publishableKey: config.publishableKey.substring(0, 10) + "***",
-  });
-
-  const response = await axios.post(url, payload, {
-    headers: {
-      "Authorization": `Bearer ${accessToken}`,
-      "Content-Type": "application/json",
-      "Version": "2021-07-28",
-    },
-  });
-
-  console.log("✅ Provider config response:", response.data);
-  return response.data;
-}
-
-async function updateAppCapabilities(accessToken, locationId) {
-  // V2 API endpoint - PUT method
-  const url = "https://services.leadconnectorhq.com/payments/custom-provider/capabilities";
-  
-  const payload = {
-    locationId: locationId,
-    addCardOnFileSupported: false, // Clover doesn't support this via Ecommerce API
-  };
-
-  console.log("📤 Capabilities payload:", JSON.stringify(payload));
-
-  try {
-    const response = await axios.put(url, payload, {
-      headers: {
-        "Authorization": `Bearer ${accessToken}`,
-        "Content-Type": "application/json",
-        "Version": "2021-07-28",
-      },
-    });
-
-    console.log("✅ Capabilities response:", response.data);
-    return response.data;
-  } catch (error) {
-    // This endpoint might not be required or might fail - that's OK
-    console.log("ℹ️ Capabilities endpoint optional");
-    throw error;
-  }
-}
-
-function generateApiKey() {
-  return 'sk_' + Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
-}
-
-function generatePublishableKey() {
-  return 'pk_' + Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
-}
-
-async function createIntegrationAssociation(locationId, accessToken) {
-  const baseUrl = process.env.VERCEL_URL || 'api.onesolutionapp.com';
-  
-  // Try method 1: Query parameter
-  const url = `https://services.leadconnectorhq.com/payments/custom-provider/provider?locationId=${locationId}`;
-  
-  const payload = {
-    name: "Clover by PNC",
-    description: "Accept payments via Clover devices and online",
-    imageUrl: "https://www.clover.com/assets/images/public-site/press/clover_logo_primary.png",
-    queryUrl: `https://${baseUrl}/api/payment/query`,
-    paymentsUrl: `https://${baseUrl}/payment-form`,
-  };
-
-  console.log("📤 Attempt 1: locationId in query parameter");
-  console.log("📤 URL:", url);
   console.log("📤 Payload:", JSON.stringify(payload, null, 2));
 
   try {
-    const response = await axios.post(url, payload, {
+    const response = await axios.post(connectUrl, payload, {
       headers: {
         "Authorization": `Bearer ${accessToken}`,
         "Content-Type": "application/json",
@@ -211,23 +94,26 @@ async function createIntegrationAssociation(locationId, accessToken) {
       },
     });
 
-    console.log("✅ Integration created!");
-    console.log("✅ Response:", JSON.stringify(response.data));
-    return response.data;
+    console.log("✅ GHL config updated successfully!");
+    console.log("   Response:", JSON.stringify(response.data));
     
-  } catch (error1) {
-    console.error("❌ Query param method failed:", error1.response?.status);
-    console.log("📤 Attempt 2: locationId in body as string");
+  } catch (error) {
+    console.error("❌ GHL config update failed:");
+    console.error("   Status:", error.response?.status);
+    console.error("   Error:", JSON.stringify(error.response?.data));
     
-    // Try method 2: In body with explicit string conversion
-    const url2 = "https://services.leadconnectorhq.com/payments/custom-provider/provider";
-    const payload2 = {
-      locationId: String(locationId).trim(),
-      ...payload
-    };
-    
-    try {
-      const response2 = await axios.post(url2, payload2, {
+    // Try alternative format if first attempt fails
+    if (error.response?.status === 422 || error.response?.status === 400) {
+      console.log("   Trying alternative payload format...");
+      
+      const altPayload = {
+        locationId: locationId,
+        apiKey: config.apiKey,
+        publishableKey: config.publishableKey,
+        liveMode: config.liveMode
+      };
+      
+      const altResponse = await axios.post(connectUrl, altPayload, {
         headers: {
           "Authorization": `Bearer ${accessToken}`,
           "Content-Type": "application/json",
@@ -235,33 +121,10 @@ async function createIntegrationAssociation(locationId, accessToken) {
         },
       });
       
-      console.log("✅ Integration created (method 2)!");
-      return response2.data;
-      
-    } catch (error2) {
-      console.error("❌ Body method also failed:", error2.response?.status);
-      console.log("📤 Attempt 3: Using /connect endpoint");
-      
-      // Try method 3: Original connect endpoint
-      const url3 = "https://services.leadconnectorhq.com/payments/custom-provider/connect";
-      
-      try {
-        const response3 = await axios.post(url3, payload2, {
-          headers: {
-            "Authorization": `Bearer ${accessToken}`,
-            "Content-Type": "application/json",
-            "Version": "2021-07-28",
-          },
-        });
-        
-        console.log("✅ Integration created (method 3)!");
-        return response3.data;
-        
-      } catch (error3) {
-        console.error("❌ All methods failed");
-        console.error("Final error:", error3.response?.data);
-        throw error3;
-      }
+      console.log("✅ Alternative format worked!");
+      console.log("   Response:", JSON.stringify(altResponse.data));
+    } else {
+      throw error;
     }
   }
 }
