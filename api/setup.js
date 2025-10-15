@@ -223,9 +223,53 @@ export default function handler(req, res) {
     </div>
     
     <script>
-        const urlParams = new URLSearchParams(window.location.search);
-        const locationId = urlParams.get('location_id') || urlParams.get('locationId');
-        const companyId = urlParams.get('company_id') || urlParams.get('companyId');
+        // Get locationId from multiple sources - extract ONCE at page load
+        function getLocationId() {
+            // Method 1: From URL params
+            const urlParams = new URLSearchParams(window.location.search);
+            let locationId = urlParams.get('location_id') || urlParams.get('locationId');
+            
+            // Check if it's a template placeholder
+            if (locationId && !locationId.includes('{{') && !locationId.includes('}}')) {
+                console.log('✅ Got locationId from URL:', locationId);
+                return locationId;
+            }
+            
+            // Method 2: From parent window URL (if in iframe)
+            try {
+                if (window.parent && window.parent !== window) {
+                    const parentUrl = window.parent.location.href;
+                    const match = parentUrl.match(/\\/location\\/([^\\/]+)/);
+                    if (match && match[1]) {
+                        console.log('✅ Got locationId from parent URL:', match[1]);
+                        return match[1];
+                    }
+                }
+            } catch (e) {
+                console.log('⚠️ Cannot access parent URL due to cross-origin');
+            }
+            
+            return null;
+        }
+        
+        function getCompanyId() {
+            const urlParams = new URLSearchParams(window.location.search);
+            let companyId = urlParams.get('company_id') || urlParams.get('companyId');
+            
+            if (companyId && !companyId.includes('{{') && !companyId.includes('}}')) {
+                return companyId;
+            }
+            
+            return null;
+        }
+        
+        // Extract locationId and companyId ONCE at page load
+        const locationId = getLocationId();
+        const companyId = getCompanyId();
+        
+        console.log('📍 Setup page loaded');
+        console.log('   LocationId:', locationId);
+        console.log('   CompanyId:', companyId);
         
         let currentMode = 'test';
         
@@ -241,7 +285,7 @@ export default function handler(req, res) {
             e.preventDefault();
             
             if (!locationId) {
-                showMessage('error', 'Missing location ID. Please install the app first.');
+                showMessage('error', 'Missing location ID. Please access this page from the GHL app or use the direct URL with locationId parameter.');
                 return;
             }
             
@@ -251,13 +295,15 @@ export default function handler(req, res) {
             submitBtn.innerHTML = '<span class="spinner"></span> Saving...';
             
             const config = {
-                locationId: locationId,
+                locationId: locationId,  // Use the extracted locationId from page load
                 companyId: companyId,
                 merchantId: document.getElementById('merchantId').value,
                 apiToken: document.getElementById('apiToken').value,
                 publicKey: document.getElementById('publicKey').value,
                 liveMode: currentMode === 'live'
             };
+            
+            console.log('📤 Submitting config with locationId:', config.locationId);
             
             try {
                 const response = await fetch('/api/config/save-clover-config', {
@@ -303,6 +349,7 @@ export default function handler(req, res) {
             }
         }
         
+        // Show warning if no locationId found
         if (!locationId) {
             showMessage('error', 'Warning: No location ID detected. Make sure you access this page from the GHL app.');
         }
