@@ -28,23 +28,36 @@ export default async function handler(req, res) {
       
     const companyId = tokenData.companyId || tokenData.company_id;
     
-    console.log("📦 Token data received:", {
-      hasLocationId: !!locationId,
-      hasCompanyId: !!companyId,
-      locationId: locationId
-    });
-    
-    if (!locationId) {
-      console.error("❌ No locationId found in OAuth response");
-      throw new Error("locationId not found in OAuth response");
-    }
-
     const {
       access_token,
       refresh_token,
       expires_in,
       scope,
     } = tokenData;
+    
+    console.log("📦 Token data received:", {
+      hasLocationId: !!locationId,
+      hasCompanyId: !!companyId,
+      locationId: locationId
+    });
+    
+    // If no locationId, try to get it from installer details API
+    if (!locationId && companyId && access_token) {
+      console.log("🔍 No locationId in token, fetching from installer details API...");
+      try {
+        const installerDetails = await getInstallerDetails(access_token);
+        locationId = installerDetails.locationId || installerDetails.location_id;
+        console.log("✅ Got locationId from installer details:", locationId);
+      } catch (error) {
+        console.error("⚠️ Could not get installer details:", error.message);
+        console.error("   Response:", error.response?.data);
+      }
+    }
+    
+    if (!locationId) {
+      console.error("❌ No locationId found in OAuth response or installer API");
+      throw new Error("locationId not found in OAuth response");
+    }
 
     console.log("✅ OAuth Success!");
     console.log("   Location ID:", locationId);
@@ -155,6 +168,20 @@ async function storeLocationTokens(locationId, tokenData) {
   const key = `ghl_location_${locationId}`;
   await redis.set(key, JSON.stringify(tokenData));
   console.log(`✅ Tokens stored for location: ${locationId}`);
+}
+
+async function getInstallerDetails(accessToken) {
+  const url = "https://services.leadconnectorhq.com/oauth/installedLocation";
+  
+  const response = await axios.get(url, {
+    headers: {
+      "Authorization": `Bearer ${accessToken}`,
+      "Version": "2021-07-28",
+    },
+  });
+
+  console.log("📦 Installer details:", JSON.stringify(response.data));
+  return response.data;
 }
 
 async function createPaymentIntegration(locationId, accessToken) {
