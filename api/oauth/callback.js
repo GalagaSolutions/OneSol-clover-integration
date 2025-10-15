@@ -8,7 +8,7 @@ const redis = new Redis({
 
 export default async function handler(req, res) {
   try {
-    const { code, location_id, locationId: queryLocationId } = req.query;
+    const { code } = req.query;
 
     if (!code) {
       console.error("❌ No authorization code provided");
@@ -21,11 +21,7 @@ export default async function handler(req, res) {
     const tokenData = await exchangeCodeForToken(code);
     
     // Extract location ID from multiple possible sources
-    let locationId = tokenData.locationId 
-      || tokenData.location_id 
-      || queryLocationId 
-      || location_id;
-      
+    const locationId = tokenData.locationId || tokenData.location_id;
     const companyId = tokenData.companyId || tokenData.company_id;
     
     const {
@@ -40,22 +36,9 @@ export default async function handler(req, res) {
       hasCompanyId: !!companyId,
       locationId: locationId
     });
-    
-    // If no locationId, try to get it from installer details API
-    if (!locationId && companyId && access_token) {
-      console.log("🔍 No locationId in token, fetching from installer details API...");
-      try {
-        const installerDetails = await getInstallerDetails(access_token);
-        locationId = installerDetails.locationId || installerDetails.location_id;
-        console.log("✅ Got locationId from installer details:", locationId);
-      } catch (error) {
-        console.error("⚠️ Could not get installer details:", error.message);
-        console.error("   Response:", error.response?.data);
-      }
-    }
-    
+
     if (!locationId) {
-      console.error("❌ No locationId found in OAuth response or installer API");
+      console.error("❌ No locationId found in OAuth response");
       throw new Error("locationId not found in OAuth response");
     }
 
@@ -74,62 +57,25 @@ export default async function handler(req, res) {
       installedAt: new Date().toISOString(),
     });
 
-    // CRITICAL: Create the integration association
-    console.log("📤 Creating payment integration association...");
+    // Register the payment integration
+    console.log("📤 Creating payment integration...");
     try {
       const integrationResult = await createPaymentIntegration(locationId, access_token);
-      console.log("✅ Integration created:", integrationResult);
+      console.log("✅ Integration created:", integrationResult._id);
     } catch (error) {
-      console.error("❌ Integration creation FAILED:", error.message);
+      console.error("⚠️ Integration creation failed:", error.message);
       console.error("   Status:", error.response?.status);
-      console.error("   Data:", JSON.stringify(error.response?.data));
-      
-      // THIS IS CRITICAL - Don't proceed if integration fails
-      // The user needs to know there's a problem
-      return res.send(`
-        <html>
-          <head>
-            <style>
-              body { font-family: Arial; padding: 40px; background: #f5f5f5; }
-              .container { max-width: 600px; margin: 0 auto; background: white; padding: 30px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
-              .error { color: #d32f2f; margin-bottom: 20px; }
-              .details { background: #f5f5f5; padding: 15px; border-radius: 4px; font-size: 12px; font-family: monospace; margin: 20px 0; overflow-x: auto; }
-              .btn { display: inline-block; padding: 10px 20px; background: #667eea; color: white; text-decoration: none; border-radius: 5px; margin-top: 20px; }
-            </style>
-          </head>
-          <body>
-            <div class="container">
-              <h1>⚠️ Integration Setup Error</h1>
-              <p class="error">OAuth completed successfully, but the payment integration failed to register with GoHighLevel.</p>
-              
-              <h3>Error Details:</h3>
-              <div class="details">
-Status: ${error.response?.status}
-Message: ${error.response?.data?.message || error.message}
-Location: ${locationId}
-              </div>
-              
-              <h3>What to do:</h3>
-              <ol>
-                <li>Check that your app category is set to "Third Party Provider" in the Marketplace dashboard</li>
-                <li>Verify your queryUrl and paymentsUrl are correctly configured</li>
-                <li>Try uninstalling and reinstalling the app</li>
-                <li>Contact support if the issue persists</li>
-              </ol>
-              
-              <a href="https://app.gohighlevel.com/location/${locationId}/settings/payments" class="btn">Go to Payments Settings</a>
-            </div>
-          </body>
-        </html>
-      `);
+      console.error("   Data:", error.response?.data);
+      // Continue anyway - user can try reconnecting
     }
 
     // Redirect to setup page
-const baseUrl = process.env.VERCEL_URL || 'clover-integration25.vercel.app';
-const setupUrl = `https://${baseUrl}/api/setup?locationId=${locationId}&companyId=${companyId}`;
+    // Use custom domain or Vercel URL
+    const baseUrl = process.env.CUSTOM_DOMAIN || 'clover-integration25.vercel.app';
+    const setupUrl = `https://${baseUrl}/setup?locationId=${locationId}&companyId=${companyId}`;
 
-console.log("🔄 Redirecting to setup:", setupUrl);
-return res.redirect(302, setupUrl);
+    console.log("🔄 Redirecting to setup:", setupUrl);
+    return res.redirect(302, setupUrl);
 
   } catch (error) {
     console.error("❌ OAuth callback error:", error.response?.data || error.message);
@@ -170,24 +116,9 @@ async function storeLocationTokens(locationId, tokenData) {
   console.log(`✅ Tokens stored for location: ${locationId}`);
 }
 
-async function getInstallerDetails(accessToken) {
-  const url = "https://services.leadconnectorhq.com/oauth/installedLocation";
-  
-  const response = await axios.get(url, {
-    headers: {
-      "Authorization": `Bearer ${accessToken}`,
-      "Version": "2021-07-28",
-    },
-  });
-
-  console.log("📦 Installer details:", JSON.stringify(response.data));
-  return response.data;
-}
-
 async function createPaymentIntegration(locationId, accessToken) {
-  const baseUrl = 'api.onesolutionapp.com';
+  const baseUrl = process.env.CUSTOM_DOMAIN || 'clover-integration25.vercel.app';
   
-  // Use the provider endpoint - this creates the association
   const url = `https://services.leadconnectorhq.com/payments/custom-provider/provider?locationId=${locationId}`;
   
   const payload = {
@@ -198,28 +129,16 @@ async function createPaymentIntegration(locationId, accessToken) {
     paymentsUrl: `https://${baseUrl}/payment-form`,
   };
 
-  console.log("📤 Creating integration:");
-  console.log("   URL:", url);
-  console.log("   Payload:", JSON.stringify(payload, null, 2));
+  console.log("📤 Creating integration with payload:", JSON.stringify(payload, null, 2));
 
-  try {
-    const response = await axios.post(url, payload, {
-      headers: {
-        "Authorization": `Bearer ${accessToken}`,
-        "Content-Type": "application/json",
-        "Version": "2021-07-28",
-      },
-    });
+  const response = await axios.post(url, payload, {
+    headers: {
+      "Authorization": `Bearer ${accessToken}`,
+      "Content-Type": "application/json",
+      "Version": "2021-07-28",
+    },
+  });
 
-    console.log("✅ Integration API response:", JSON.stringify(response.data));
-    return response.data;
-  } catch (error) {
-    // Log the full error for debugging
-    console.error("❌ Integration creation failed");
-    console.error("   Request URL:", url);
-    console.error("   Request payload:", JSON.stringify(payload));
-    console.error("   Response status:", error.response?.status);
-    console.error("   Response data:", JSON.stringify(error.response?.data));
-    throw error;
-  }
+  console.log("✅ Integration API response:", response.data);
+  return response.data;
 }

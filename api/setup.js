@@ -13,7 +13,6 @@ export default function handler(req, res) {
     });
   }
 
-  // Rest of the existing setup page code...
   const html = `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -21,14 +20,10 @@ export default function handler(req, res) {
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Clover Setup</title>
     <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
         
         body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             min-height: 100vh;
             display: flex;
@@ -44,11 +39,6 @@ export default function handler(req, res) {
             max-width: 500px;
             width: 100%;
             padding: 40px;
-        }
-        
-        .logo {
-            text-align: center;
-            margin-bottom: 30px;
         }
         
         h1 {
@@ -124,19 +114,11 @@ export default function handler(req, res) {
             font-size: 16px;
             font-weight: 600;
             cursor: pointer;
-            transition: transform 0.2s, box-shadow 0.2s;
+            transition: transform 0.2s;
         }
         
-        .btn:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 10px 20px rgba(102, 126, 234, 0.4);
-        }
-        
-        .btn:disabled {
-            background: #ccc;
-            cursor: not-allowed;
-            transform: none;
-        }
+        .btn:hover { transform: translateY(-2px); }
+        .btn:disabled { background: #ccc; cursor: not-allowed; }
         
         .message {
             padding: 12px;
@@ -174,22 +156,13 @@ export default function handler(req, res) {
             animation: spin 1s ease-in-out infinite;
         }
         
-        @keyframes spin {
-            to { transform: rotate(360deg); }
-        }
+        @keyframes spin { to { transform: rotate(360deg); } }
     </style>
 </head>
 <body>
     <div class="container">
-        <div class="logo">
-            <svg width="80" height="80" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
-                <circle cx="50" cy="50" r="45" fill="#FF6B35"/>
-                <path d="M30 50 L45 65 L70 35" stroke="white" stroke-width="8" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
-            </svg>
-        </div>
-        
         <h1>Clover Setup</h1>
-        <p class="subtitle">Connect your Clover payment processor to GoHighLevel</p>
+        <p class="subtitle">Connect your Clover payment processor</p>
         
         <form id="setupForm">
             <div class="mode-toggle">
@@ -199,96 +172,49 @@ export default function handler(req, res) {
             
             <div class="form-group">
                 <label for="merchantId">Clover Merchant ID *</label>
-                <input type="text" id="merchantId" required placeholder="Enter your Clover Merchant ID">
-                <div class="help-text">Find this in your Clover Dashboard</div>
+                <input type="text" id="merchantId" required placeholder="Enter Merchant ID">
+                <div class="help-text">Find in Clover Dashboard</div>
             </div>
             
             <div class="form-group">
                 <label for="apiToken">Clover API Token *</label>
-                <input type="password" id="apiToken" required placeholder="Enter your Clover API Token">
-                <div class="help-text">Generate this in Clover Dashboard → API Tokens</div>
+                <input type="password" id="apiToken" required placeholder="Enter API Token">
+                <div class="help-text">Generate in Clover Dashboard → API Tokens</div>
             </div>
             
             <div class="form-group">
-                <label for="publicKey">Clover Public Key</label>
-                <input type="text" id="publicKey" placeholder="Optional: For frontend payments">
+                <label for="publicKey">Clover Public Key (Optional)</label>
+                <input type="text" id="publicKey" placeholder="For frontend payments">
             </div>
             
-            <button type="submit" class="btn" id="submitBtn">
-                Save Configuration
-            </button>
+            <button type="submit" class="btn" id="submitBtn">Save Configuration</button>
             
             <div id="message" class="message"></div>
         </form>
     </div>
     
     <script>
-        // Get locationId from multiple sources - extract ONCE at page load
-function getLocationId() {
-    // Method 1: From URL params
-    const urlParams = new URLSearchParams(window.location.search);
-    let locationId = urlParams.get('location_id') || urlParams.get('locationId');
-    
-    // Check if it's a template placeholder
-    if (locationId && !locationId.includes('{{') && !locationId.includes('}}')) {
-        console.log('✅ Got locationId from URL:', locationId);
-        return locationId;
-    }
-    
-    // Method 2: From parent window URL (if in iframe)
-    try {
-        if (window.parent && window.parent !== window) {
-            const parentUrl = window.parent.location.href;
-            const match = parentUrl.match(/\/location\/([a-zA-Z0-9_-]+)/);
-            if (match && match[1]) {
-                console.log('✅ Got locationId from parent URL:', match[1]);
-                return match[1];
+        // Simple locationId extraction
+        const urlParams = new URLSearchParams(window.location.search);
+        let locationId = urlParams.get('locationId') || urlParams.get('location_id');
+        const companyId = urlParams.get('companyId') || urlParams.get('company_id');
+        
+        // If not in URL, try to get from parent (for iframe)
+        if (!locationId && window.location !== window.parent.location) {
+            try {
+                const parentUrl = window.parent.location.href;
+                const match = parentUrl.match(/\\/location\\/([a-zA-Z0-9_-]+)/);
+                if (match) locationId = match[1];
+            } catch (e) {
+                console.log('Cannot access parent URL');
             }
         }
-    } catch (e) {
-        console.log('⚠️ Cannot access parent URL, trying referrer...');
         
-        // Method 3: Try to get from document.referrer
-        if (document.referrer) {
-            const match = document.referrer.match(/\/location\/([a-zA-Z0-9_-]+)/);
-            if (match && match[1]) {
-                console.log('✅ Got locationId from referrer:', match[1]);
-                return match[1];
-            }
-        }
-    }
-    
-    // Method 4: Last resort - check current page URL pattern
-    const currentMatch = window.location.href.match(/locationId=([a-zA-Z0-9_-]+)/);
-    if (currentMatch && currentMatch[1] && !currentMatch[1].includes('{{')) {
-        console.log('✅ Got locationId from current URL:', currentMatch[1]);
-        return currentMatch[1];
-    }
-    
-    return null;
-}
-        
-        function getCompanyId() {
-            const urlParams = new URLSearchParams(window.location.search);
-            let companyId = urlParams.get('company_id') || urlParams.get('companyId');
-            
-            if (companyId && !companyId.includes('{{') && !companyId.includes('}}')) {
-                return companyId;
-            }
-            
-            return null;
-        }
-        
-        // Extract locationId and companyId ONCE at page load
-        const locationId = getLocationId();
-        const companyId = getCompanyId();
-        
-        console.log('📍 Setup page loaded');
-        console.log('   LocationId:', locationId);
-        console.log('   CompanyId:', companyId);
+        console.log('Setup loaded - LocationId:', locationId);
         
         let currentMode = 'test';
         
+        // Mode toggle
         document.querySelectorAll('.mode-btn').forEach(btn => {
             btn.addEventListener('click', function() {
                 document.querySelectorAll('.mode-btn').forEach(b => b.classList.remove('active'));
@@ -297,21 +223,21 @@ function getLocationId() {
             });
         });
         
+        // Form submit
         document.getElementById('setupForm').addEventListener('submit', async function(e) {
             e.preventDefault();
             
             if (!locationId) {
-                showMessage('error', 'Missing location ID. Please access this page from the GHL app or use the direct URL with locationId parameter.');
+                showMessage('error', 'Missing location ID. Please access from GHL or add ?locationId=YOUR_ID to URL');
                 return;
             }
             
             const submitBtn = document.getElementById('submitBtn');
-            const originalText = submitBtn.innerHTML;
             submitBtn.disabled = true;
             submitBtn.innerHTML = '<span class="spinner"></span> Saving...';
             
             const config = {
-                locationId: locationId,  // Use the extracted locationId from page load
+                locationId: locationId,
                 companyId: companyId,
                 merchantId: document.getElementById('merchantId').value,
                 apiToken: document.getElementById('apiToken').value,
@@ -319,21 +245,20 @@ function getLocationId() {
                 liveMode: currentMode === 'live'
             };
             
-            console.log('📤 Submitting config with locationId:', config.locationId);
-            
             try {
                 const response = await fetch('/api/config/save-clover-config', {
                     method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
+                    headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(config)
                 });
                 
                 const result = await response.json();
                 
                 if (response.ok && result.success) {
-                    showMessage('success', '✓ Configuration saved successfully! Clover is now connected.');
+                    showMessage('success', result.message || '✓ Configuration saved successfully!');
+                    
+                    // Clear sensitive fields
+                    document.getElementById('apiToken').value = '';
                     
                     setTimeout(() => {
                         if (window.parent && window.parent !== window) {
@@ -341,14 +266,14 @@ function getLocationId() {
                         }
                     }, 2000);
                 } else {
-                    showMessage('error', result.error || 'Failed to save configuration. Please try again.');
+                    showMessage('error', result.error || 'Failed to save configuration');
                 }
             } catch (error) {
                 console.error('Setup error:', error);
-                showMessage('error', 'Network error. Please check your connection and try again.');
+                showMessage('error', 'Network error: ' + error.message);
             } finally {
                 submitBtn.disabled = false;
-                submitBtn.innerHTML = originalText;
+                submitBtn.innerHTML = 'Save Configuration';
             }
         });
         
@@ -359,15 +284,13 @@ function getLocationId() {
             messageDiv.style.display = 'block';
             
             if (type === 'success') {
-                setTimeout(() => {
-                    messageDiv.style.display = 'none';
-                }, 5000);
+                setTimeout(() => messageDiv.style.display = 'none', 5000);
             }
         }
         
-        // Show warning if no locationId found
+        // Show warning if no locationId
         if (!locationId) {
-            showMessage('error', 'Warning: No location ID detected. Make sure you access this page from the GHL app.');
+            showMessage('error', 'No location ID found. Access this page from GHL integration settings.');
         }
     </script>
 </body>
