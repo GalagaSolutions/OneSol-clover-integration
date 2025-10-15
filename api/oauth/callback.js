@@ -185,7 +185,7 @@ async function getInstallerDetails(accessToken) {
 }
 
 async function createPaymentIntegration(locationId, accessToken) {
-  const baseUrl = process.env.VERCEL_URL || 'api.onesolutionapp.com';
+  const baseUrl = 'api.onesolutionapp.com';
   
   // Use the provider endpoint - this creates the association
   const url = `https://services.leadconnectorhq.com/payments/custom-provider/provider?locationId=${locationId}`;
