@@ -126,7 +126,7 @@ Location: ${locationId}
 
     // Redirect to setup page
     const baseUrl = process.env.VERCEL_URL || 'api.onesolutionapp.com';
-    const setupUrl = `https://${baseUrl}/setup?locationId=${locationId}&companyId=${companyId}`;
+    const setupUrl = `https://${baseUrl}/api/setup?locationId=${locationId}&companyId=${companyId}`;
     
     console.log("🔄 Redirecting to setup:", setupUrl);
     return res.redirect(302, setupUrl);
