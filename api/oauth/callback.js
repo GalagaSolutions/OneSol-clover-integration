@@ -16,102 +16,27 @@ export default async function handler(req, res) {
     }
 
     console.log("🔄 Exchanging authorization code for tokens...");
-    console.log("📦 Query params:", { 
-      hasCode: !!code, 
-      location_id, 
-      queryLocationId,
-      allParams: Object.keys(req.query)
-    });
 
     // Exchange code for tokens
     const tokenData = await exchangeCodeForToken(code);
     
-    // Try multiple ways to get locationId
+    // Extract location ID from multiple possible sources
     let locationId = tokenData.locationId 
       || tokenData.location_id 
       || queryLocationId 
       || location_id;
       
     const companyId = tokenData.companyId || tokenData.company_id;
-    const isBulkInstallation = tokenData.isBulkInstallation || false;
     
     console.log("📦 Token data received:", {
       hasLocationId: !!locationId,
       hasCompanyId: !!companyId,
-      isBulkInstallation,
-      userId: tokenData.userId,
-      allTokenFields: Object.keys(tokenData)
+      locationId: locationId
     });
     
-    // If no locationId yet, try to get it from marketplace installer details API
-    if (!locationId && companyId && tokenData.access_token) {
-      console.log("🔍 No locationId found, fetching from installer details API...");
-      try {
-        const installerDetails = await getInstallerDetails(tokenData.access_token);
-        locationId = installerDetails.locationId || installerDetails.location_id;
-        console.log("✅ Got locationId from installer details:", locationId);
-      } catch (error) {
-        console.error("⚠️ Could not get installer details:", error.message);
-        console.error("   Error response:", error.response?.data);
-      }
-    }
-    
-    // If STILL no locationId, check if we can decode it from the JWT
-    if (!locationId && tokenData.access_token) {
-      console.log("🔍 Attempting to decode locationId from JWT...");
-      try {
-        const decoded = decodeJWT(tokenData.access_token);
-        console.log("📦 JWT decoded:", decoded);
-        locationId = decoded.locationId || decoded.location_id;
-        if (locationId) {
-          console.log("✅ Got locationId from JWT:", locationId);
-        }
-      } catch (error) {
-        console.error("⚠️ Could not decode JWT:", error.message);
-      }
-    }
-    
-    // Handle both location-level and agency-level installations
-    if (!locationId && !companyId) {
-      console.error("❌ No locationId or companyId found in token response");
-      throw new Error("locationId or companyId not found in OAuth response");
-    }
-    
-    // For agency-level installations without specific location
-    if (!locationId && isBulkInstallation) {
-      console.log("🏢 Agency-level installation detected");
-      console.log("   Company ID:", companyId);
-      
-      // Store agency-level tokens
-      await storeAgencyTokens(companyId, {
-        accessToken: tokenData.access_token,
-        refreshToken: tokenData.refresh_token,
-        expiresAt: Date.now() + tokenData.expires_in * 1000,
-        companyId: companyId,
-        scope: tokenData.scope,
-        installedAt: new Date().toISOString(),
-        isBulkInstallation: true,
-      });
-      
-      // Redirect with message about manual setup per location
-      const baseUrl = process.env.VERCEL_URL || 'api.onesolutionapp.com';
-      return res.send(`
-        <html>
-          <body style="font-family: Arial; padding: 40px; text-align: center;">
-            <h1>⚠️ Agency-Level Installation</h1>
-            <p>This app needs to be installed at the sub-account level, not agency-wide.</p>
-            <p>Please reinstall and select a specific location/sub-account.</p>
-            <br>
-            <a href="https://marketplace.gohighlevel.com" style="padding: 10px 20px; background: #667eea; color: white; text-decoration: none; border-radius: 5px;">Go to Marketplace</a>
-          </body>
-        </html>
-      `);
-    }
-    
-    // If we still don't have locationId, use companyId as fallback
     if (!locationId) {
-      console.log("⚠️ Using companyId as locationId fallback");
-      locationId = companyId;
+      console.error("❌ No locationId found in OAuth response");
+      throw new Error("locationId not found in OAuth response");
     }
 
     const {
@@ -125,7 +50,7 @@ export default async function handler(req, res) {
     console.log("   Location ID:", locationId);
     console.log("   Company ID:", companyId);
 
-    // Store tokens
+    // Store tokens in Redis
     await storeLocationTokens(locationId, {
       accessToken: access_token,
       refreshToken: refresh_token,
@@ -136,17 +61,57 @@ export default async function handler(req, res) {
       installedAt: new Date().toISOString(),
     });
 
-    // CRITICAL: Create Integration using V2 API format
-    console.log("📤 Creating payment integration...");
+    // CRITICAL: Create the integration association
+    console.log("📤 Creating payment integration association...");
     try {
-      await createPaymentIntegration(locationId, access_token);
-      console.log("✅ Payment integration created");
+      const integrationResult = await createPaymentIntegration(locationId, access_token);
+      console.log("✅ Integration created:", integrationResult);
     } catch (error) {
-      console.error("⚠️ Integration creation failed:", error.message);
-      console.error("   Response:", error.response?.data);
+      console.error("❌ Integration creation FAILED:", error.message);
+      console.error("   Status:", error.response?.status);
+      console.error("   Data:", JSON.stringify(error.response?.data));
+      
+      // THIS IS CRITICAL - Don't proceed if integration fails
+      // The user needs to know there's a problem
+      return res.send(`
+        <html>
+          <head>
+            <style>
+              body { font-family: Arial; padding: 40px; background: #f5f5f5; }
+              .container { max-width: 600px; margin: 0 auto; background: white; padding: 30px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+              .error { color: #d32f2f; margin-bottom: 20px; }
+              .details { background: #f5f5f5; padding: 15px; border-radius: 4px; font-size: 12px; font-family: monospace; margin: 20px 0; overflow-x: auto; }
+              .btn { display: inline-block; padding: 10px 20px; background: #667eea; color: white; text-decoration: none; border-radius: 5px; margin-top: 20px; }
+            </style>
+          </head>
+          <body>
+            <div class="container">
+              <h1>⚠️ Integration Setup Error</h1>
+              <p class="error">OAuth completed successfully, but the payment integration failed to register with GoHighLevel.</p>
+              
+              <h3>Error Details:</h3>
+              <div class="details">
+Status: ${error.response?.status}
+Message: ${error.response?.data?.message || error.message}
+Location: ${locationId}
+              </div>
+              
+              <h3>What to do:</h3>
+              <ol>
+                <li>Check that your app category is set to "Third Party Provider" in the Marketplace dashboard</li>
+                <li>Verify your queryUrl and paymentsUrl are correctly configured</li>
+                <li>Try uninstalling and reinstalling the app</li>
+                <li>Contact support if the issue persists</li>
+              </ol>
+              
+              <a href="https://app.gohighlevel.com/location/${locationId}/settings/payments" class="btn">Go to Payments Settings</a>
+            </div>
+          </body>
+        </html>
+      `);
     }
 
-    // Redirect to setup page to collect Clover credentials
+    // Redirect to setup page
     const baseUrl = process.env.VERCEL_URL || 'api.onesolutionapp.com';
     const setupUrl = `https://${baseUrl}/setup?locationId=${locationId}&companyId=${companyId}`;
     
@@ -192,47 +157,13 @@ async function storeLocationTokens(locationId, tokenData) {
   console.log(`✅ Tokens stored for location: ${locationId}`);
 }
 
-async function storeAgencyTokens(companyId, tokenData) {
-  const key = `ghl_company_${companyId}`;
-  await redis.set(key, JSON.stringify(tokenData));
-  console.log(`✅ Agency tokens stored for company: ${companyId}`);
-}
-
-async function getInstallerDetails(accessToken) {
-  const url = "https://services.leadconnectorhq.com/oauth/installedLocation";
-  
-  const response = await axios.get(url, {
-    headers: {
-      "Authorization": `Bearer ${accessToken}`,
-      "Version": "2021-07-28",
-    },
-  });
-
-  console.log("📦 Installer details:", JSON.stringify(response.data));
-  return response.data;
-}
-
-function decodeJWT(token) {
-  // Decode JWT (just the payload, no verification needed here)
-  const parts = token.split('.');
-  if (parts.length !== 3) {
-    throw new Error('Invalid JWT format');
-  }
-  
-  const payload = parts[1];
-  const decoded = Buffer.from(payload, 'base64').toString('utf-8');
-  return JSON.parse(decoded);
-}
-
 async function createPaymentIntegration(locationId, accessToken) {
   const baseUrl = process.env.VERCEL_URL || 'api.onesolutionapp.com';
   
-  // CORRECT ENDPOINT from documentation:
-  // https://marketplace.gohighlevel.com/docs/ghl/payments/create-integration/
-  const url = "https://services.leadconnectorhq.com/payments/custom-provider/provider";
+  // Use the provider endpoint - this creates the association
+  const url = `https://services.leadconnectorhq.com/payments/custom-provider/provider?locationId=${locationId}`;
   
   const payload = {
-    locationId: locationId,
     name: "Clover by PNC",
     description: "Accept payments via Clover devices and online",
     imageUrl: "https://www.clover.com/assets/images/public-site/press/clover_logo_primary.png",
@@ -240,19 +171,28 @@ async function createPaymentIntegration(locationId, accessToken) {
     paymentsUrl: `https://${baseUrl}/payment-form`,
   };
 
-  console.log("📤 Creating integration with CORRECT endpoint");
-  console.log("📤 URL:", url);
-  console.log("📤 Payload:", JSON.stringify(payload, null, 2));
+  console.log("📤 Creating integration:");
+  console.log("   URL:", url);
+  console.log("   Payload:", JSON.stringify(payload, null, 2));
 
-  const response = await axios.post(url, payload, {
-    headers: {
-      "Authorization": `Bearer ${accessToken}`,
-      "Content-Type": "application/json",
-      "Version": "2021-07-28",
-    },
-  });
+  try {
+    const response = await axios.post(url, payload, {
+      headers: {
+        "Authorization": `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
+        "Version": "2021-07-28",
+      },
+    });
 
-  console.log("✅ Integration created successfully!");
-  console.log("✅ Response:", JSON.stringify(response.data));
-  return response.data;
+    console.log("✅ Integration API response:", JSON.stringify(response.data));
+    return response.data;
+  } catch (error) {
+    // Log the full error for debugging
+    console.error("❌ Integration creation failed");
+    console.error("   Request URL:", url);
+    console.error("   Request payload:", JSON.stringify(payload));
+    console.error("   Response status:", error.response?.status);
+    console.error("   Response data:", JSON.stringify(error.response?.data));
+    throw error;
+  }
 }
