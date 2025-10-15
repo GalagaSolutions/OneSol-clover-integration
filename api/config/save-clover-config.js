@@ -37,8 +37,7 @@ export default async function handler(req, res) {
     // Get GHL access token
     const accessToken = await getLocationToken(locationId);
 
-    // 🔥 THIS IS THE KEY PART - Call GHL's Connect Config API
-    // This enables test/live mode in the GHL UI
+    // 🔥 THIS IS THE KEY PART - Call GHL's Connect Config API with correct format
     await updateGHLPaymentConfig(locationId, accessToken, {
       apiKey: apiToken,
       publishableKey: publicKey || merchantId,
@@ -70,19 +69,18 @@ async function updateGHLPaymentConfig(locationId, accessToken, config) {
   console.log("🔧 Updating GHL payment provider config");
   console.log("   Mode:", config.liveMode ? "LIVE" : "TEST");
   
-  // This is the API endpoint from GHL docs that enables test/live mode
-  const connectUrl = "https://services.leadconnectorhq.com/payments/custom-provider/connect";
+  // FIXED: locationId goes in URL query parameter, config nested under test/live
+  const connectUrl = `https://services.leadconnectorhq.com/payments/custom-provider/connect?locationId=${locationId}`;
   
+  const modeKey = config.liveMode ? "live" : "test";
   const payload = {
-    locationId: locationId,
-    liveMode: config.liveMode,
-    // These keys enable the payment provider in GHL
-    [config.liveMode ? "live" : "test"]: {
+    [modeKey]: {
       apiKey: config.apiKey,
       publishableKey: config.publishableKey
     }
   };
 
+  console.log("📤 URL:", connectUrl);
   console.log("📤 Payload:", JSON.stringify(payload, null, 2));
 
   try {
@@ -102,29 +100,6 @@ async function updateGHLPaymentConfig(locationId, accessToken, config) {
     console.error("   Status:", error.response?.status);
     console.error("   Error:", JSON.stringify(error.response?.data));
     
-    // Try alternative format if first attempt fails
-    if (error.response?.status === 422 || error.response?.status === 400) {
-      console.log("   Trying alternative payload format...");
-      
-      const altPayload = {
-        locationId: locationId,
-        apiKey: config.apiKey,
-        publishableKey: config.publishableKey,
-        liveMode: config.liveMode
-      };
-      
-      const altResponse = await axios.post(connectUrl, altPayload, {
-        headers: {
-          "Authorization": `Bearer ${accessToken}`,
-          "Content-Type": "application/json",
-          "Version": "2021-07-28",
-        },
-      });
-      
-      console.log("✅ Alternative format worked!");
-      console.log("   Response:", JSON.stringify(altResponse.data));
-    } else {
-      throw error;
-    }
+    throw error;
   }
 }
