@@ -1,4 +1,3 @@
-// api/payment-form-simple.js
 export default function handler(req, res) {
   const { 
     amount = '0.00', 
@@ -8,19 +7,9 @@ export default function handler(req, res) {
     customerName = '' 
   } = req.query;
   
-  // Prefer PAKMS key for frontend, fallback to Merchant ID
   const pakmsKey = process.env.CLOVER_PAKMS_KEY;
   const merchantId = process.env.CLOVER_MERCHANT_ID || 'RCTSTAVI0010002';
   const cloverKey = pakmsKey || merchantId;
-
-  let invoiceInfoHTML = '';
-  if (invoiceId || customerName || customerEmail) {
-    invoiceInfoHTML = `<div class="invoice-info">
-      ${invoiceId ? `<div><strong>Invoice:</strong> ${invoiceId}</div>` : ''}
-      ${customerName ? `<div><strong>Customer:</strong> ${customerName}</div>` : ''}
-      ${customerEmail ? `<div><strong>Email:</strong> ${customerEmail}</div>` : ''}
-    </div>`;
-  }
 
   const html = `<!DOCTYPE html>
 <html lang="en">
@@ -47,6 +36,15 @@ export default function handler(req, res) {
             max-width: 450px;
             width: 100%;
             padding: 40px;
+        }
+        .pakms-badge {
+            text-align: center;
+            margin-bottom: 20px;
+            padding: 8px;
+            background: #e8f4f8;
+            border-radius: 6px;
+            font-size: 11px;
+            color: #0066cc;
         }
         h1 { text-align: center; color: #333; margin-bottom: 8px; font-size: 24px; }
         .amount { text-align: center; font-size: 36px; font-weight: 700; color: #667eea; margin-bottom: 30px; }
@@ -94,20 +92,24 @@ export default function handler(req, res) {
             margin-right: 10px;
         }
         @keyframes spin { to { transform: rotate(360deg); } }
-        .debug { margin-top: 15px; padding: 10px; background: #f0f0f0; border-radius: 4px; font-size: 11px; font-family: monospace; max-height: 150px; overflow-y: auto; }
-        .merchant-badge { text-align: center; margin-bottom: 20px; padding: 10px; background: #e8f4f8; border-radius: 6px; font-size: 12px; color: #0066cc; }
+        .debug { margin-top: 15px; padding: 10px; background: #f0f0f0; border-radius: 4px; font-size: 11px; font-family: monospace; max-height: 150px; overflow-y: auto; display: none; }
+        .debug.show { display: block; }
     </style>
 </head>
 <body>
     <div class="payment-container">
-        <div class="merchant-badge">
-            🔧 Using: ${pakmsKey ? 'PAKMS Key (' + pakmsKey.substring(0, 10) + '...)' : 'Merchant ID (' + merchantId.substring(0, 8) + '...)'}
+        <div class="pakms-badge">
+            🔧 ${pakmsKey ? 'PAKMS: ' + pakmsKey.substring(0, 10) + '...' : 'Merchant: ' + merchantId.substring(0, 8) + '...'}
         </div>
         
         <h1>Complete Payment</h1>
-        <div class="amount">$${amount}</div>
+        <div class="amount" id="amountDisplay">$${amount}</div>
         
-        ${invoiceInfoHTML}
+        <div class="invoice-info" id="invoiceInfo" style="display: none;">
+            <div id="invoiceIdDisplay"></div>
+            <div id="customerNameDisplay"></div>
+            <div id="customerEmailDisplay"></div>
+        </div>
         
         <form id="paymentForm">
             <div class="form-group">
@@ -142,17 +144,107 @@ export default function handler(req, res) {
     </div>
     
     <script>
-        const paymentData = {
-            locationId: '${locationId}',
-            invoiceId: '${invoiceId}',
-            amount: parseFloat('${amount}'),
-            customerEmail: '${customerEmail}',
-            customerName: '${customerName}'
+        let paymentData = {
+            locationId: '${locationId}' || null,
+            invoiceId: '${invoiceId}' || null,
+            amount: parseFloat('${amount}') || 0,
+            customerEmail: '${customerEmail}' || null,
+            customerName: '${customerName}' || null
         };
-        const cloverKey = '${cloverKey}';
         
-        // Track this invoice for device payment matching
-        if (paymentData.invoiceId && paymentData.amount > 0) {
+        const cloverKey = '${cloverKey}';
+        let logs = [];
+        
+        function log(msg, data) {
+            const entry = new Date().toLocaleTimeString() + ' - ' + msg + (data ? ': ' + JSON.stringify(data).substring(0, 100) : '');
+            console.log(msg, data || '');
+            logs.push(entry);
+            const debugEl = document.getElementById('debug');
+            debugEl.textContent = logs.join('\\n');
+            debugEl.classList.add('show');
+        }
+        
+        log('🔧 Initial payment data from URL', paymentData);
+        
+        // Try to get data from parent window (GHL iframe context)
+        function extractFromParent() {
+            try {
+                if (window.parent && window.parent !== window) {
+                    const parentUrl = window.parent.location.href;
+                    log('📍 Parent URL', parentUrl);
+                    
+                    // Extract locationId from parent URL
+                    const locMatch = parentUrl.match(/\\/location\\/([a-zA-Z0-9_-]+)/);
+                    if (locMatch && !paymentData.locationId) {
+                        paymentData.locationId = locMatch[1];
+                        log('✅ Got locationId from parent', locMatch[1]);
+                    }
+                    
+                    // Extract invoiceId from parent URL
+                    const invMatch = parentUrl.match(/\\/invoice\\/([a-zA-Z0-9_-]+)/);
+                    if (invMatch && !paymentData.invoiceId) {
+                        paymentData.invoiceId = invMatch[1];
+                        log('✅ Got invoiceId from parent', invMatch[1]);
+                    }
+                }
+            } catch (e) {
+                log('⚠️ Cannot access parent (cross-origin)', e.message);
+            }
+        }
+        
+        // Listen for messages from parent
+        window.addEventListener('message', function(event) {
+            log('📨 Message from parent', event.data);
+            
+            if (event.data && typeof event.data === 'object') {
+                if (event.data.locationId) paymentData.locationId = event.data.locationId;
+                if (event.data.invoiceId) paymentData.invoiceId = event.data.invoiceId;
+                if (event.data.amount) paymentData.amount = event.data.amount;
+                if (event.data.customerEmail) paymentData.customerEmail = event.data.customerEmail;
+                if (event.data.customerName) paymentData.customerName = event.data.customerName;
+                
+                updateDisplay();
+            }
+        });
+        
+        // Request data from parent
+        if (window.parent && window.parent !== window) {
+            window.parent.postMessage({ type: 'REQUEST_PAYMENT_DATA' }, '*');
+        }
+        
+        extractFromParent();
+        
+        function updateDisplay() {
+            if (paymentData.amount > 0) {
+                document.getElementById('amountDisplay').textContent = '$' + paymentData.amount.toFixed(2);
+                document.getElementById('payButton').textContent = 'Pay $' + paymentData.amount.toFixed(2);
+            }
+            
+            const infoDiv = document.getElementById('invoiceInfo');
+            let hasInfo = false;
+            
+            if (paymentData.invoiceId) {
+                document.getElementById('invoiceIdDisplay').innerHTML = '<strong>Invoice:</strong> ' + paymentData.invoiceId;
+                hasInfo = true;
+            }
+            if (paymentData.customerName) {
+                document.getElementById('customerNameDisplay').innerHTML = '<strong>Customer:</strong> ' + paymentData.customerName;
+                hasInfo = true;
+            }
+            if (paymentData.customerEmail) {
+                document.getElementById('customerEmailDisplay').innerHTML = '<strong>Email:</strong> ' + paymentData.customerEmail;
+                hasInfo = true;
+            }
+            
+            if (hasInfo) {
+                infoDiv.style.display = 'block';
+            }
+        }
+        
+        updateDisplay();
+        
+        // Track invoice
+        if (paymentData.invoiceId && paymentData.amount > 0 && paymentData.locationId) {
             fetch('/api/invoice/track', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -161,25 +253,8 @@ export default function handler(req, res) {
                     invoiceId: paymentData.invoiceId,
                     amount: paymentData.amount
                 })
-            }).then(() => console.log('📝 Invoice tracked for matching'))
-              .catch(err => console.log('⚠️ Could not track invoice:', err));
-        }
-        
-        let logs = [];
-        function log(msg, data) {
-            const entry = new Date().toLocaleTimeString() + ' - ' + msg + (data ? ': ' + JSON.stringify(data).substring(0, 100) : '');
-            console.log(msg, data || '');
-            logs.push(entry);
-            document.getElementById('debug').textContent = logs.join('\\n');
-        }
-        
-        log('🔧 Initializing', { key: cloverKey.substring(0, 10) + '...', amount: paymentData.amount });
-        
-        if (!paymentData.locationId) {
-            document.getElementById('message').className = 'message error';
-            document.getElementById('message').textContent = '❌ Missing locationId parameter';
-            document.getElementById('message').style.display = 'block';
-            document.getElementById('payButton').disabled = true;
+            }).then(() => log('📝 Invoice tracked'))
+              .catch(err => log('⚠️ Track failed', err.message));
         }
         
         let clover, elements, cardNumber, cardDate, cardCvv, cardPostalCode;
@@ -195,8 +270,6 @@ export default function handler(req, res) {
                     
                     clover = new Clover(cloverKey);
                     elements = clover.elements();
-                    
-                    log('✅ Clover initialized');
                     
                     const styles = {
                         body: { fontFamily: 'Arial, sans-serif', fontSize: '16px' },
@@ -215,8 +288,6 @@ export default function handler(req, res) {
                     
                     log('✅ Elements mounted');
                     
-                    cardNumber.addEventListener('change', e => log('Card field updated'));
-                    
                 } catch (error) {
                     log('❌ Init error', error.message);
                     document.getElementById('message').className = 'message error';
@@ -229,6 +300,13 @@ export default function handler(req, res) {
         
         document.getElementById('paymentForm').addEventListener('submit', async function(e) {
             e.preventDefault();
+            
+            if (!paymentData.locationId) {
+                document.getElementById('message').className = 'message error';
+                document.getElementById('message').textContent = '❌ Missing location ID. Cannot process payment.';
+                document.getElementById('message').style.display = 'block';
+                return;
+            }
             
             log('🔄 Submitting payment');
             
@@ -244,16 +322,13 @@ export default function handler(req, res) {
                 log('🔄 Creating token...');
                 const result = await clover.createToken();
                 
-                log('Token response', result);
-                
                 if (result.errors?.length > 0) {
                     throw new Error(result.errors[0].message || 'Validation failed');
                 }
                 
                 const token = result.token || result.id;
                 if (!token) {
-                    log('❌ No token', result);
-                    throw new Error('No payment token received. Check console for details.');
+                    throw new Error('No payment token received');
                 }
                 
                 log('✅ Token created', token.substring(0, 15) + '...');
@@ -294,10 +369,18 @@ export default function handler(req, res) {
                     document.getElementById('message').style.display = 'block';
                     log('✅ Payment successful');
                     
-                    // Stop spinner and update button
                     btn.disabled = false;
                     btn.innerHTML = '✅ Payment Complete';
                     btn.style.background = '#28a745';
+                    
+                    // Notify parent
+                    if (window.parent && window.parent !== window) {
+                        window.parent.postMessage({ 
+                            type: 'PAYMENT_SUCCESS',
+                            transactionId: paymentResult.transactionId,
+                            amount: paymentResult.amount
+                        }, '*');
+                    }
                 } else {
                     throw new Error(paymentResult.error || 'Payment failed');
                 }
