@@ -153,10 +153,8 @@ export default function handler(req, res) {
         };
         
         const cloverKey = '${cloverKey}';
-        
         console.log('Initial data:', paymentData);
         
-        // Check if we have template variables ({{...}})
         function hasTemplateVars(str) {
             return str && str.includes('{{') && str.includes('}}');
         }
@@ -167,58 +165,36 @@ export default function handler(req, res) {
                    paymentData.amount > 0;
         }
         
-        // Try to get invoiceId from current page URL or referrer
-        function extractInvoiceIdFromURL() {
-            // Try referrer first (the page that loaded this iframe)
-            const referrer = document.referrer;
-            if (referrer) {
-                console.log('Checking referrer URL:', referrer);
-                const patterns = [
-                    /\/invoice\/([a-zA-Z0-9_-]+)/,  // /invoice/abc123
-                    /invoiceId[=:]([a-zA-Z0-9_-]+)/, // invoiceId=abc123
-                ];
-                
-                for (const pattern of patterns) {
-                    const match = referrer.match(pattern);
-                    if (match && match[1]) {
-                        console.log('Found invoiceId in referrer:', match[1]);
-                        return match[1];
-                    }
-                }
-            }
-            
-            // Try current URL as fallback
-            const currentUrl = window.location.href;
-            console.log('Checking current URL:', currentUrl);
-            const patterns = [
-                /\/invoice\/([a-zA-Z0-9_-]+)/,
-                /invoiceId[=:]([a-zA-Z0-9_-]+)/,
-            ];
-            
-            for (const pattern of patterns) {
-                const match = currentUrl.match(pattern);
-                if (match && match[1]) {
-                    console.log('Found invoiceId in current URL:', match[1]);
-                    return match[1];
-                }
-            }
-            
-            console.log('Could not extract invoiceId from any URL');
-            return null;
-        }
-        
         async function fetchInvoiceData() {
             console.log('=== FETCHING INVOICE DATA ===');
             
-            // Strategy 1: Extract from parent using DOM (if same origin)
+            // Try top.location first
+            try {
+                const topLocation = top.location.href;
+                console.log('Top location:', topLocation);
+                const match = topLocation.match(/\\/invoice\\/([a-zA-Z0-9_-]+)/);
+                if (match && match[1]) {
+                    console.log('✅ Extracted from top.location:', match[1]);
+                    return {
+                        locationId: 'cv3mmKLIVdqbZSVeksCW',
+                        invoiceId: match[1],
+                        amount: 5.00,
+                        customerEmail: '',
+                        customerName: ''
+                    };
+                }
+            } catch (e) {
+                console.log('Cannot access top.location:', e.message);
+            }
+            
+            // Try parent.location
             if (window.parent && window.parent !== window) {
                 try {
-                    // Try to read parent's location
                     const parentLocation = window.parent.location.href;
                     console.log('Parent location:', parentLocation);
-                    const match = parentLocation.match(/\/invoice\/([a-zA-Z0-9_-]+)/);
+                    const match = parentLocation.match(/\\/invoice\\/([a-zA-Z0-9_-]+)/);
                     if (match && match[1]) {
-                        console.log('✅ Extracted from parent location:', match[1]);
+                        console.log('✅ Extracted from parent.location:', match[1]);
                         return {
                             locationId: 'cv3mmKLIVdqbZSVeksCW',
                             invoiceId: match[1],
@@ -228,118 +204,53 @@ export default function handler(req, res) {
                         };
                     }
                 } catch (e) {
-                    console.log('Cannot access parent location (cross-origin):', e.message);
+                    console.log('Cannot access parent.location:', e.message);
                 }
             }
-            
-            // Strategy 2: Extract from referrer
-            const referrer = document.referrer;
-            console.log('Referrer:', referrer || 'empty');
-            
-            if (referrer && referrer !== 'https://link.fastpaydirect.com/') {
-                const match = referrer.match(/\/invoice\/([a-zA-Z0-9_-]+)/);
-                if (match && match[1]) {
-                    console.log('✅ Extracted invoiceId from referrer:', match[1]);
-                    return {
-                        locationId: 'cv3mmKLIVdqbZSVeksCW',
-                        invoiceId: match[1],
-                        amount: 5.00,
-                        customerEmail: '',
-                        customerName: ''
-                    };
-                }
-            }
-            
-            // Strategy 3: Use a HACK - read from top.location if possible
-            try {
-                const topLocation = top.location.href;
-                if (topLocation && topLocation !== window.location.href) {
-                    console.log('Top location:', topLocation);
-                    const match = topLocation.match(/\/invoice\/([a-zA-Z0-9_-]+)/);
-                    if (match && match[1]) {
-                        console.log('✅ Extracted from top.location:', match[1]);
-                        return {
-                            locationId: 'cv3mmKLIVdqbZSVeksCW',
-                            invoiceId: match[1],
-                            amount: 5.00,
-                            customerEmail: '',
-                            customerName: ''
-                        };
-                    }
-                }
-            } catch (e) {
-                console.log('Cannot access top.location:', e.message);
-            }
-            
-            console.error('❌ Could not extract invoiceId from any source');
-            console.log('All URLs checked:');
-            console.log('  - Referrer:', referrer || 'none');
-            console.log('  - Current:', window.location.href);
             
             throw new Error('Cannot determine invoice ID. Please use the payment link from the invoice email.');
         }
         
-        // Try to get invoice data from parent page via postMessage
         let parentDataReceived = false;
         
         window.addEventListener('message', function(event) {
-            console.log('📨 Message received:', event.data);
-            
-            if (event.data && typeof event.data === 'object') {
-                if (event.data.invoiceId) {
-                    paymentData.invoiceId = event.data.invoiceId;
-                    parentDataReceived = true;
-                }
+            if (event.data && typeof event.data === 'object' && event.data.invoiceId) {
+                paymentData.invoiceId = event.data.invoiceId;
                 if (event.data.amount) paymentData.amount = event.data.amount;
                 if (event.data.locationId) paymentData.locationId = event.data.locationId;
-                if (event.data.customerEmail) paymentData.customerEmail = event.data.customerEmail;
-                if (event.data.customerName) paymentData.customerName = event.data.customerName;
-                
-                if (parentDataReceived) {
-                    console.log('✅ Got data from parent via postMessage');
-                    updateDisplay();
-                    document.getElementById('loadingState').style.display = 'none';
-                    document.getElementById('mainForm').style.display = 'block';
-                    setTimeout(initClover, 500);
-                }
+                parentDataReceived = true;
+                console.log('✅ Got data from parent via postMessage');
             }
         });
         
-        // Request data from parent
         if (window.parent && window.parent !== window) {
-            console.log('📤 Requesting invoice data from parent');
-            window.parent.postMessage({ 
-                type: 'REQUEST_INVOICE_DATA',
-                source: 'clover-payment-form'
-            }, '*');
+            window.parent.postMessage({ type: 'REQUEST_INVOICE_DATA' }, '*');
         }
         
         async function initialize() {
             try {
-                // Check if we have valid data
-                if (!isDataValid()) {
-                    console.log('Data invalid or has templates, fetching...');
+                // Wait for postMessage
+                await new Promise(resolve => setTimeout(resolve, 1000));
+                
+                if (parentDataReceived && paymentData.invoiceId && !hasTemplateVars(paymentData.invoiceId)) {
+                    console.log('Using data from postMessage');
+                } else if (!isDataValid()) {
+                    console.log('Data invalid, fetching...');
                     const fetchedData = await fetchInvoiceData();
                     Object.assign(paymentData, fetchedData);
                 }
                 
                 console.log('Final payment data:', paymentData);
-                
-                // Update display
                 updateDisplay();
                 
-                // Hide loading, show form
                 document.getElementById('loadingState').style.display = 'none';
                 document.getElementById('mainForm').style.display = 'block';
-                
-                // Initialize Clover
                 setTimeout(initClover, 500);
                 
             } catch (error) {
-                console.error('Initialization error:', error);
+                console.error('Init error:', error);
                 document.getElementById('loadingState').innerHTML = 
-                    '<div style="color: #d32f2f;">❌ ' + error.message + '</div>' +
-                    '<div style="font-size: 14px; margin-top: 10px;">Please contact support</div>';
+                    '<div style="color: #d32f2f;">❌ ' + error.message + '</div>';
             }
         }
         
@@ -355,12 +266,6 @@ export default function handler(req, res) {
             if (paymentData.invoiceId && !hasTemplateVars(paymentData.invoiceId)) {
                 html += '<div><strong>Invoice:</strong> ' + paymentData.invoiceId + '</div>';
             }
-            if (paymentData.customerName && !hasTemplateVars(paymentData.customerName)) {
-                html += '<div><strong>Customer:</strong> ' + paymentData.customerName + '</div>';
-            }
-            if (paymentData.customerEmail && !hasTemplateVars(paymentData.customerEmail)) {
-                html += '<div><strong>Email:</strong> ' + paymentData.customerEmail + '</div>';
-            }
             
             if (html) {
                 infoDiv.innerHTML = html;
@@ -372,10 +277,6 @@ export default function handler(req, res) {
         
         function initClover() {
             try {
-                if (typeof Clover === 'undefined') {
-                    throw new Error('Clover SDK not loaded');
-                }
-                
                 clover = new Clover(cloverKey);
                 elements = clover.elements();
                 
@@ -397,7 +298,6 @@ export default function handler(req, res) {
                 console.log('Clover initialized');
             } catch (error) {
                 console.error('Clover init error:', error);
-                showMessage('error', 'Payment system initialization failed: ' + error.message);
             }
         }
         
@@ -417,9 +317,7 @@ export default function handler(req, res) {
                 }
                 
                 const token = result.token || result.id;
-                if (!token) {
-                    throw new Error('No payment token received');
-                }
+                if (!token) throw new Error('No payment token received');
                 
                 const payload = {
                     locationId: paymentData.locationId,
@@ -440,11 +338,10 @@ export default function handler(req, res) {
                 const paymentResult = await response.json();
                 
                 if (paymentResult.success) {
-                    showMessage('success', 
-                        '✅ Payment Successful!<br>' +
-                        'Transaction: ' + paymentResult.transactionId + '<br>' +
-                        'Amount: $' + paymentResult.amount
-                    );
+                    document.getElementById('message').className = 'message success';
+                    document.getElementById('message').innerHTML = 
+                        '✅ Payment Successful!<br>Transaction: ' + paymentResult.transactionId;
+                    document.getElementById('message').style.display = 'block';
                     
                     btn.innerHTML = '✅ Payment Complete';
                     btn.style.background = '#28a745';
@@ -454,20 +351,14 @@ export default function handler(req, res) {
                 
             } catch (error) {
                 console.error('Payment error:', error);
-                showMessage('error', '❌ ' + error.message);
+                document.getElementById('message').className = 'message error';
+                document.getElementById('message').textContent = '❌ ' + error.message;
+                document.getElementById('message').style.display = 'block';
                 btn.disabled = false;
                 btn.innerHTML = originalText;
             }
         });
         
-        function showMessage(type, text) {
-            const msg = document.getElementById('message');
-            msg.className = 'message ' + type;
-            msg.innerHTML = text;
-            msg.style.display = 'block';
-        }
-        
-        // Start initialization
         initialize();
     </script>
 </body>
