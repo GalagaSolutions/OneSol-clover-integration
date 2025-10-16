@@ -170,11 +170,22 @@ export default function handler(req, res) {
         // Try to get invoiceId from current page URL
         function extractInvoiceIdFromURL() {
             const currentUrl = window.location.href;
-            const match = currentUrl.match(/invoice\\/([a-zA-Z0-9_-]+)/);
-            if (match) {
-                console.log('Found invoiceId in URL:', match[1]);
-                return match[1];
+            // Try multiple patterns
+            const patterns = [
+                /\/invoice\/([a-zA-Z0-9_-]+)/,  // /invoice/abc123
+                /invoiceId[=:]([a-zA-Z0-9_-]+)/, // invoiceId=abc123 or invoiceId:abc123
+                /invoice[=:]([a-zA-Z0-9_-]+)/    // invoice=abc123
+            ];
+            
+            for (const pattern of patterns) {
+                const match = currentUrl.match(pattern);
+                if (match && match[1]) {
+                    console.log('Found invoiceId in URL:', match[1]);
+                    return match[1];
+                }
             }
+            
+            console.log('Could not extract invoiceId from URL:', currentUrl);
             return null;
         }
         
