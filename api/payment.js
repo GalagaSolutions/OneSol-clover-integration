@@ -17,7 +17,7 @@ export default async function handler(req, res) {
   const path = req.url?.split('?')[0] || '';
   
   // Route 1: GHL Query URL
-  if (path.includes('/query') || req.body?.type) {
+  if (path.includes('/query')) {
     return handleQueryURL(req, res);
   }
   
@@ -31,7 +31,7 @@ export default async function handler(req, res) {
 }
 
 /**
- * QUERY URL HANDLER - For GHL backend calls
+ * QUERY URL HANDLER - For GHL backend calls AND payment form URL generation
  */
 async function handleQueryURL(req, res) {
   if (req.method !== "POST") {
@@ -42,8 +42,26 @@ async function handleQueryURL(req, res) {
     console.log("🔔 Query URL called from GHL");
     console.log("📦 Payload:", JSON.stringify(req.body, null, 2));
 
-    const { type, apiKey } = req.body;
+    const { 
+      type, 
+      apiKey,
+      locationId,
+      amount,
+      invoiceId,
+      altId,
+      altType,
+      email,
+      name,
+      customerId 
+    } = req.body;
 
+    // NEW: Handle payment form URL generation (no type field)
+    if (!type && locationId && amount) {
+      console.log("🔗 Generating payment form URL");
+      return handlePaymentFormURL(req.body, res);
+    }
+
+    // EXISTING: Handle backend API calls (with type field)
     if (!apiKey) {
       console.error("❌ Missing apiKey");
       return res.status(401).json({ error: "Unauthorized - missing apiKey" });
@@ -84,6 +102,62 @@ async function handleQueryURL(req, res) {
       message: error.message,
     });
   }
+}
+
+/**
+ * NEW: Payment Form URL Generator
+ * Called by GHL to get the payment form URL with proper parameters
+ */
+async function handlePaymentFormURL(data, res) {
+  const { 
+    locationId, 
+    amount, 
+    invoiceId,
+    altId,
+    altType,
+    email,
+    name 
+  } = data;
+
+  if (!locationId) {
+    console.error("❌ Missing locationId");
+    return res.status(400).json({ error: "Missing locationId" });
+  }
+
+  if (!amount) {
+    console.error("❌ Missing amount");
+    return res.status(400).json({ error: "Missing amount" });
+  }
+
+  // Use altId as invoiceId if provided (GHL sends invoice ID as altId)
+  const finalInvoiceId = invoiceId || altId;
+
+  console.log("✅ Building payment form URL");
+  console.log("   Location:", locationId);
+  console.log("   Amount:", amount);
+  console.log("   Invoice:", finalInvoiceId);
+
+  // Build the payment form URL with actual values
+  const baseUrl = process.env.CUSTOM_DOMAIN || 'clover-integration25.vercel.app';
+  
+  const params = new URLSearchParams({
+    locationId: locationId,
+    amount: (amount / 100).toFixed(2), // Convert cents to dollars
+    invoiceId: finalInvoiceId || '',
+    customerEmail: email || '',
+    customerName: name || ''
+  });
+
+  const paymentUrl = `https://${baseUrl}/payment-form?${params.toString()}`;
+
+  console.log("🔗 Payment URL:", paymentUrl);
+
+  // Return the payment form URL to GHL
+  return res.status(200).json({
+    success: true,
+    url: paymentUrl,
+    message: "Payment form URL generated"
+  });
 }
 
 async function handleVerify(data, res) {
