@@ -207,35 +207,111 @@ export default function handler(req, res) {
             return null;
         }
         
-        // If data invalid, try to fetch from GHL invoice page
         async function fetchInvoiceData() {
-            const invoiceId = extractInvoiceIdFromURL();
+            console.log('=== FETCHING INVOICE DATA ===');
             
-            if (!invoiceId) {
-                throw new Error('Cannot determine invoice ID');
+            // Strategy 1: Extract from parent using DOM (if same origin)
+            if (window.parent && window.parent !== window) {
+                try {
+                    // Try to read parent's location
+                    const parentLocation = window.parent.location.href;
+                    console.log('Parent location:', parentLocation);
+                    const match = parentLocation.match(/\/invoice\/([a-zA-Z0-9_-]+)/);
+                    if (match && match[1]) {
+                        console.log('✅ Extracted from parent location:', match[1]);
+                        return {
+                            locationId: 'cv3mmKLIVdqbZSVeksCW',
+                            invoiceId: match[1],
+                            amount: 5.00,
+                            customerEmail: '',
+                            customerName: ''
+                        };
+                    }
+                } catch (e) {
+                    console.log('Cannot access parent location (cross-origin):', e.message);
+                }
             }
             
-            console.log('Fetching invoice data for:', invoiceId);
+            // Strategy 2: Extract from referrer
+            const referrer = document.referrer;
+            console.log('Referrer:', referrer || 'empty');
             
-            // Try to get data from a backend endpoint
+            if (referrer && referrer !== 'https://link.fastpaydirect.com/') {
+                const match = referrer.match(/\/invoice\/([a-zA-Z0-9_-]+)/);
+                if (match && match[1]) {
+                    console.log('✅ Extracted invoiceId from referrer:', match[1]);
+                    return {
+                        locationId: 'cv3mmKLIVdqbZSVeksCW',
+                        invoiceId: match[1],
+                        amount: 5.00,
+                        customerEmail: '',
+                        customerName: ''
+                    };
+                }
+            }
+            
+            // Strategy 3: Use a HACK - read from top.location if possible
             try {
-                const response = await fetch(\`/api/invoice/\${invoiceId}\`);
-                if (response.ok) {
-                    const data = await response.json();
-                    return data;
+                const topLocation = top.location.href;
+                if (topLocation && topLocation !== window.location.href) {
+                    console.log('Top location:', topLocation);
+                    const match = topLocation.match(/\/invoice\/([a-zA-Z0-9_-]+)/);
+                    if (match && match[1]) {
+                        console.log('✅ Extracted from top.location:', match[1]);
+                        return {
+                            locationId: 'cv3mmKLIVdqbZSVeksCW',
+                            invoiceId: match[1],
+                            amount: 5.00,
+                            customerEmail: '',
+                            customerName: ''
+                        };
+                    }
                 }
             } catch (e) {
-                console.log('Could not fetch invoice data:', e);
+                console.log('Cannot access top.location:', e.message);
             }
             
-            // Fallback: use cv3mmKLIVdqbZSVeksCW as default location
-            return {
-                locationId: 'cv3mmKLIVdqbZSVeksCW',
-                invoiceId: invoiceId,
-                amount: 5.00, // Default amount
-                customerEmail: '',
-                customerName: ''
-            };
+            console.error('❌ Could not extract invoiceId from any source');
+            console.log('All URLs checked:');
+            console.log('  - Referrer:', referrer || 'none');
+            console.log('  - Current:', window.location.href);
+            
+            throw new Error('Cannot determine invoice ID. Please use the payment link from the invoice email.');
+        }
+        
+        // Try to get invoice data from parent page via postMessage
+        let parentDataReceived = false;
+        
+        window.addEventListener('message', function(event) {
+            console.log('📨 Message received:', event.data);
+            
+            if (event.data && typeof event.data === 'object') {
+                if (event.data.invoiceId) {
+                    paymentData.invoiceId = event.data.invoiceId;
+                    parentDataReceived = true;
+                }
+                if (event.data.amount) paymentData.amount = event.data.amount;
+                if (event.data.locationId) paymentData.locationId = event.data.locationId;
+                if (event.data.customerEmail) paymentData.customerEmail = event.data.customerEmail;
+                if (event.data.customerName) paymentData.customerName = event.data.customerName;
+                
+                if (parentDataReceived) {
+                    console.log('✅ Got data from parent via postMessage');
+                    updateDisplay();
+                    document.getElementById('loadingState').style.display = 'none';
+                    document.getElementById('mainForm').style.display = 'block';
+                    setTimeout(initClover, 500);
+                }
+            }
+        });
+        
+        // Request data from parent
+        if (window.parent && window.parent !== window) {
+            console.log('📤 Requesting invoice data from parent');
+            window.parent.postMessage({ 
+                type: 'REQUEST_INVOICE_DATA',
+                source: 'clover-payment-form'
+            }, '*');
         }
         
         async function initialize() {
