@@ -434,28 +434,27 @@ async function handleStandalonePayment(req, res) {
 
 async function recordPaymentInGHL(locationId, invoiceId, accessToken, paymentData) {
   console.log("📝 Recording payment in GHL");
+  console.log("   Location ID:", locationId);
+  console.log("   Invoice ID:", invoiceId);
+  console.log("   Amount:", paymentData.amount);
+  console.log("   Transaction ID:", paymentData.transactionId);
   
-  const customProviderUrl = "https://services.leadconnectorhq.com/payments/custom-provider/record";
+  // Use the invoice-specific record payment endpoint
+  const invoicePaymentUrl = `https://services.leadconnectorhq.com/invoices/${invoiceId}/record-payment`;
   
   const payload = {
-    locationId: locationId,
-    invoiceId: invoiceId,
-    amount: Math.round(paymentData.amount * 100),
-    currency: "usd",
+    amount: paymentData.amount, // Keep as dollars, not cents
+    paymentMode: "custom",
     transactionId: paymentData.transactionId,
-    paymentMode: "live",
-    status: "succeeded",
-    provider: "clover",
-    metadata: {
-      customerEmail: paymentData.customerEmail,
-      customerName: paymentData.customerName,
-      processor: "clover",
-      source: "custom_payment_form"
-    }
+    notes: "Payment via Clover device/online"
   };
   
+  console.log("📤 Invoice Payment API Request");
+  console.log("   URL:", invoicePaymentUrl);
+  console.log("   Payload:", JSON.stringify(payload, null, 2));
+  
   try {
-    const response = await axios.post(customProviderUrl, payload, {
+    const response = await axios.post(invoicePaymentUrl, payload, {
       headers: {
         Authorization: `Bearer ${accessToken}`,
         "Content-Type": "application/json",
@@ -463,38 +462,13 @@ async function recordPaymentInGHL(locationId, invoiceId, accessToken, paymentDat
       },
     });
     
-    console.log("✅ Payment recorded via Custom Provider API");
+    console.log("✅ Payment recorded via Invoice Payment API");
+    console.log("   Response:", JSON.stringify(response.data));
     return;
     
   } catch (error) {
-    console.error("❌ Custom Provider API failed:", error.response?.status, error.response?.data);
-    
-    const ordersUrl = "https://services.leadconnectorhq.com/payments/orders";
-    
-    const ordersPayload = {
-      locationId: locationId,
-      amount: Math.round(paymentData.amount * 100),
-      currency: "usd",
-      status: "succeeded",
-      externalTransactionId: paymentData.transactionId,
-      transactionType: "charge",
-      paymentMode: "live",
-      invoiceId: invoiceId,
-      metadata: {
-        provider: "clover",
-        processor: "clover_integration"
-      }
-    };
-    
-    const response2 = await axios.post(ordersUrl, ordersPayload, {
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        "Content-Type": "application/json",
-        Version: "2021-07-28",
-      },
-    });
-    
-    console.log("✅ Payment recorded via Orders API");
+    console.error("❌ Invoice Payment API failed:", error.response?.status, error.response?.data);
+    throw error;
   }
 }
 
