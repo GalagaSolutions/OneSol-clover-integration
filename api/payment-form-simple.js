@@ -167,25 +167,43 @@ export default function handler(req, res) {
                    paymentData.amount > 0;
         }
         
-        // Try to get invoiceId from current page URL
+        // Try to get invoiceId from current page URL or referrer
         function extractInvoiceIdFromURL() {
+            // Try referrer first (the page that loaded this iframe)
+            const referrer = document.referrer;
+            if (referrer) {
+                console.log('Checking referrer URL:', referrer);
+                const patterns = [
+                    /\/invoice\/([a-zA-Z0-9_-]+)/,  // /invoice/abc123
+                    /invoiceId[=:]([a-zA-Z0-9_-]+)/, // invoiceId=abc123
+                ];
+                
+                for (const pattern of patterns) {
+                    const match = referrer.match(pattern);
+                    if (match && match[1]) {
+                        console.log('Found invoiceId in referrer:', match[1]);
+                        return match[1];
+                    }
+                }
+            }
+            
+            // Try current URL as fallback
             const currentUrl = window.location.href;
-            // Try multiple patterns
+            console.log('Checking current URL:', currentUrl);
             const patterns = [
-                /\/invoice\/([a-zA-Z0-9_-]+)/,  // /invoice/abc123
-                /invoiceId[=:]([a-zA-Z0-9_-]+)/, // invoiceId=abc123 or invoiceId:abc123
-                /invoice[=:]([a-zA-Z0-9_-]+)/    // invoice=abc123
+                /\/invoice\/([a-zA-Z0-9_-]+)/,
+                /invoiceId[=:]([a-zA-Z0-9_-]+)/,
             ];
             
             for (const pattern of patterns) {
                 const match = currentUrl.match(pattern);
                 if (match && match[1]) {
-                    console.log('Found invoiceId in URL:', match[1]);
+                    console.log('Found invoiceId in current URL:', match[1]);
                     return match[1];
                 }
             }
             
-            console.log('Could not extract invoiceId from URL:', currentUrl);
+            console.log('Could not extract invoiceId from any URL');
             return null;
         }
         
