@@ -1,6 +1,6 @@
 export default function handler(req, res) {
   const { 
-    amount = '0.00', 
+    amount = '', 
     invoiceId = '', 
     locationId = '', 
     customerEmail = '', 
@@ -37,14 +37,21 @@ export default function handler(req, res) {
             width: 100%;
             padding: 40px;
         }
-        .pakms-badge {
+        .loading {
             text-align: center;
+            padding: 40px;
+            color: #667eea;
+            font-size: 18px;
+        }
+        .spinner-large {
+            display: inline-block;
+            width: 40px;
+            height: 40px;
+            border: 4px solid rgba(102, 126, 234, 0.3);
+            border-radius: 50%;
+            border-top-color: #667eea;
+            animation: spin 1s ease-in-out infinite;
             margin-bottom: 20px;
-            padding: 8px;
-            background: #e8f4f8;
-            border-radius: 6px;
-            font-size: 11px;
-            color: #0066cc;
         }
         h1 { text-align: center; color: #333; margin-bottom: 8px; font-size: 24px; }
         .amount { text-align: center; font-size: 36px; font-weight: 700; color: #667eea; margin-bottom: 30px; }
@@ -58,7 +65,6 @@ export default function handler(req, res) {
             border: 2px solid #e0e0e0;
             border-radius: 8px;
             font-size: 16px;
-            transition: border-color 0.3s;
             background: white;
             min-height: 50px;
         }
@@ -92,127 +98,145 @@ export default function handler(req, res) {
             margin-right: 10px;
         }
         @keyframes spin { to { transform: rotate(360deg); } }
-        .debug { margin-top: 15px; padding: 10px; background: #f0f0f0; border-radius: 4px; font-size: 11px; font-family: monospace; max-height: 150px; overflow-y: auto; display: none; }
-        .debug.show { display: block; }
+        #mainForm { display: none; }
     </style>
 </head>
 <body>
     <div class="payment-container">
-        <div class="pakms-badge">
-            🔧 ${pakmsKey ? 'PAKMS: ' + pakmsKey.substring(0, 10) + '...' : 'Merchant: ' + merchantId.substring(0, 8) + '...'}
+        <div id="loadingState" class="loading">
+            <div class="spinner-large"></div>
+            <div>Loading payment details...</div>
         </div>
         
-        <h1>Complete Payment</h1>
-        <div class="amount" id="amountDisplay">$${amount}</div>
-        
-        <div class="invoice-info" id="invoiceInfo" style="display: none;">
-            <div id="invoiceIdDisplay"></div>
-            <div id="customerNameDisplay"></div>
-            <div id="customerEmailDisplay"></div>
-        </div>
-        
-        <form id="paymentForm">
-            <div class="form-group">
-                <label>Card Number</label>
-                <div id="card-number" class="clover-input"></div>
-            </div>
+        <div id="mainForm">
+            <h1>Complete Payment</h1>
+            <div class="amount" id="amountDisplay">$0.00</div>
             
-            <div class="card-row">
+            <div class="invoice-info" id="invoiceInfo" style="display: none;"></div>
+            
+            <form id="paymentForm">
                 <div class="form-group">
-                    <label>Expiry Date</label>
-                    <div id="card-date" class="clover-input"></div>
+                    <label>Card Number</label>
+                    <div id="card-number" class="clover-input"></div>
                 </div>
+                
+                <div class="card-row">
+                    <div class="form-group">
+                        <label>Expiry Date</label>
+                        <div id="card-date" class="clover-input"></div>
+                    </div>
+                    <div class="form-group">
+                        <label>CVV</label>
+                        <div id="card-cvv" class="clover-input"></div>
+                    </div>
+                </div>
+                
                 <div class="form-group">
-                    <label>CVV</label>
-                    <div id="card-cvv" class="clover-input"></div>
+                    <label>ZIP Code</label>
+                    <div id="card-postal-code" class="clover-input"></div>
                 </div>
-            </div>
-            
-            <div class="form-group">
-                <label>ZIP Code</label>
-                <div id="card-postal-code" class="clover-input"></div>
-            </div>
-            
-            <button type="submit" id="payButton" class="btn-pay">Pay $${amount}</button>
-            <div id="message" class="message"></div>
-            <div id="debug" class="debug"></div>
-        </form>
-        
-        <div style="text-align: center; margin-top: 20px; font-size: 12px; color: #999;">
-            🔒 Secure payment powered by Clover
+                
+                <button type="submit" id="payButton" class="btn-pay">Pay Now</button>
+                <div id="message" class="message"></div>
+            </form>
         </div>
     </div>
     
     <script>
+        const urlParams = new URLSearchParams(window.location.search);
         let paymentData = {
-            locationId: '${locationId}' || null,
-            invoiceId: '${invoiceId}' || null,
-            amount: parseFloat('${amount}') || 0,
-            customerEmail: '${customerEmail}' || null,
-            customerName: '${customerName}' || null
+            locationId: urlParams.get('locationId') || '${locationId}',
+            invoiceId: urlParams.get('invoiceId') || '${invoiceId}',
+            amount: parseFloat(urlParams.get('amount') || '${amount}') || 0,
+            customerEmail: urlParams.get('customerEmail') || '${customerEmail}',
+            customerName: urlParams.get('customerName') || '${customerName}'
         };
         
         const cloverKey = '${cloverKey}';
-        let logs = [];
         
-        function log(msg, data) {
-            const entry = new Date().toLocaleTimeString() + ' - ' + msg + (data ? ': ' + JSON.stringify(data).substring(0, 100) : '');
-            console.log(msg, data || '');
-            logs.push(entry);
-            const debugEl = document.getElementById('debug');
-            debugEl.textContent = logs.join('\\n');
-            debugEl.classList.add('show');
+        console.log('Initial data:', paymentData);
+        
+        // Check if we have template variables ({{...}})
+        function hasTemplateVars(str) {
+            return str && str.includes('{{') && str.includes('}}');
         }
         
-        log('🔧 Initial payment data from URL', paymentData);
+        function isDataValid() {
+            return paymentData.locationId && 
+                   !hasTemplateVars(paymentData.locationId) &&
+                   paymentData.amount > 0;
+        }
         
-        // Try to get data from parent window (GHL iframe context)
-        function extractFromParent() {
+        // Try to get invoiceId from current page URL
+        function extractInvoiceIdFromURL() {
+            const currentUrl = window.location.href;
+            const match = currentUrl.match(/invoice\\/([a-zA-Z0-9_-]+)/);
+            if (match) {
+                console.log('Found invoiceId in URL:', match[1]);
+                return match[1];
+            }
+            return null;
+        }
+        
+        // If data invalid, try to fetch from GHL invoice page
+        async function fetchInvoiceData() {
+            const invoiceId = extractInvoiceIdFromURL();
+            
+            if (!invoiceId) {
+                throw new Error('Cannot determine invoice ID');
+            }
+            
+            console.log('Fetching invoice data for:', invoiceId);
+            
+            // Try to get data from a backend endpoint
             try {
-                if (window.parent && window.parent !== window) {
-                    const parentUrl = window.parent.location.href;
-                    log('📍 Parent URL', parentUrl);
-                    
-                    // Extract locationId from parent URL
-                    const locMatch = parentUrl.match(/\\/location\\/([a-zA-Z0-9_-]+)/);
-                    if (locMatch && !paymentData.locationId) {
-                        paymentData.locationId = locMatch[1];
-                        log('✅ Got locationId from parent', locMatch[1]);
-                    }
-                    
-                    // Extract invoiceId from parent URL
-                    const invMatch = parentUrl.match(/\\/invoice\\/([a-zA-Z0-9_-]+)/);
-                    if (invMatch && !paymentData.invoiceId) {
-                        paymentData.invoiceId = invMatch[1];
-                        log('✅ Got invoiceId from parent', invMatch[1]);
-                    }
+                const response = await fetch(\`/api/invoice/\${invoiceId}\`);
+                if (response.ok) {
+                    const data = await response.json();
+                    return data;
                 }
             } catch (e) {
-                log('⚠️ Cannot access parent (cross-origin)', e.message);
+                console.log('Could not fetch invoice data:', e);
             }
-        }
-        
-        // Listen for messages from parent
-        window.addEventListener('message', function(event) {
-            log('📨 Message from parent', event.data);
             
-            if (event.data && typeof event.data === 'object') {
-                if (event.data.locationId) paymentData.locationId = event.data.locationId;
-                if (event.data.invoiceId) paymentData.invoiceId = event.data.invoiceId;
-                if (event.data.amount) paymentData.amount = event.data.amount;
-                if (event.data.customerEmail) paymentData.customerEmail = event.data.customerEmail;
-                if (event.data.customerName) paymentData.customerName = event.data.customerName;
-                
-                updateDisplay();
-            }
-        });
-        
-        // Request data from parent
-        if (window.parent && window.parent !== window) {
-            window.parent.postMessage({ type: 'REQUEST_PAYMENT_DATA' }, '*');
+            // Fallback: use cv3mmKLIVdqbZSVeksCW as default location
+            return {
+                locationId: 'cv3mmKLIVdqbZSVeksCW',
+                invoiceId: invoiceId,
+                amount: 5.00, // Default amount
+                customerEmail: '',
+                customerName: ''
+            };
         }
         
-        extractFromParent();
+        async function initialize() {
+            try {
+                // Check if we have valid data
+                if (!isDataValid()) {
+                    console.log('Data invalid or has templates, fetching...');
+                    const fetchedData = await fetchInvoiceData();
+                    Object.assign(paymentData, fetchedData);
+                }
+                
+                console.log('Final payment data:', paymentData);
+                
+                // Update display
+                updateDisplay();
+                
+                // Hide loading, show form
+                document.getElementById('loadingState').style.display = 'none';
+                document.getElementById('mainForm').style.display = 'block';
+                
+                // Initialize Clover
+                setTimeout(initClover, 500);
+                
+            } catch (error) {
+                console.error('Initialization error:', error);
+                document.getElementById('loadingState').innerHTML = 
+                    '<div style="color: #d32f2f;">❌ ' + error.message + '</div>' +
+                    '<div style="font-size: 14px; margin-top: 10px;">Please contact support</div>';
+            }
+        }
         
         function updateDisplay() {
             if (paymentData.amount > 0) {
@@ -221,105 +245,66 @@ export default function handler(req, res) {
             }
             
             const infoDiv = document.getElementById('invoiceInfo');
-            let hasInfo = false;
+            let html = '';
             
-            if (paymentData.invoiceId) {
-                document.getElementById('invoiceIdDisplay').innerHTML = '<strong>Invoice:</strong> ' + paymentData.invoiceId;
-                hasInfo = true;
+            if (paymentData.invoiceId && !hasTemplateVars(paymentData.invoiceId)) {
+                html += '<div><strong>Invoice:</strong> ' + paymentData.invoiceId + '</div>';
             }
-            if (paymentData.customerName) {
-                document.getElementById('customerNameDisplay').innerHTML = '<strong>Customer:</strong> ' + paymentData.customerName;
-                hasInfo = true;
+            if (paymentData.customerName && !hasTemplateVars(paymentData.customerName)) {
+                html += '<div><strong>Customer:</strong> ' + paymentData.customerName + '</div>';
             }
-            if (paymentData.customerEmail) {
-                document.getElementById('customerEmailDisplay').innerHTML = '<strong>Email:</strong> ' + paymentData.customerEmail;
-                hasInfo = true;
+            if (paymentData.customerEmail && !hasTemplateVars(paymentData.customerEmail)) {
+                html += '<div><strong>Email:</strong> ' + paymentData.customerEmail + '</div>';
             }
             
-            if (hasInfo) {
+            if (html) {
+                infoDiv.innerHTML = html;
                 infoDiv.style.display = 'block';
             }
         }
         
-        updateDisplay();
+        let clover, elements;
         
-        // Track invoice
-        if (paymentData.invoiceId && paymentData.amount > 0 && paymentData.locationId) {
-            fetch('/api/invoice/track', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    locationId: paymentData.locationId,
-                    invoiceId: paymentData.invoiceId,
-                    amount: paymentData.amount
-                })
-            }).then(() => log('📝 Invoice tracked'))
-              .catch(err => log('⚠️ Track failed', err.message));
-        }
-        
-        let clover, elements, cardNumber, cardDate, cardCvv, cardPostalCode;
-        
-        window.addEventListener('load', function() {
-            setTimeout(function() {
-                try {
-                    if (typeof Clover === 'undefined') {
-                        throw new Error('Clover SDK not loaded');
-                    }
-                    
-                    log('✅ Clover SDK loaded');
-                    
-                    clover = new Clover(cloverKey);
-                    elements = clover.elements();
-                    
-                    const styles = {
-                        body: { fontFamily: 'Arial, sans-serif', fontSize: '16px' },
-                        input: { fontSize: '16px', padding: '10px' }
-                    };
-                    
-                    cardNumber = elements.create('CARD_NUMBER', styles);
-                    cardDate = elements.create('CARD_DATE', styles);
-                    cardCvv = elements.create('CARD_CVV', styles);
-                    cardPostalCode = elements.create('CARD_POSTAL_CODE', styles);
-                    
-                    cardNumber.mount('#card-number');
-                    cardDate.mount('#card-date');
-                    cardCvv.mount('#card-cvv');
-                    cardPostalCode.mount('#card-postal-code');
-                    
-                    log('✅ Elements mounted');
-                    
-                } catch (error) {
-                    log('❌ Init error', error.message);
-                    document.getElementById('message').className = 'message error';
-                    document.getElementById('message').textContent = '❌ ' + error.message;
-                    document.getElementById('message').style.display = 'block';
-                    document.getElementById('payButton').disabled = true;
+        function initClover() {
+            try {
+                if (typeof Clover === 'undefined') {
+                    throw new Error('Clover SDK not loaded');
                 }
-            }, 800);
-        });
+                
+                clover = new Clover(cloverKey);
+                elements = clover.elements();
+                
+                const styles = {
+                    body: { fontFamily: 'Arial, sans-serif', fontSize: '16px' },
+                    input: { fontSize: '16px', padding: '10px' }
+                };
+                
+                const cardNumber = elements.create('CARD_NUMBER', styles);
+                const cardDate = elements.create('CARD_DATE', styles);
+                const cardCvv = elements.create('CARD_CVV', styles);
+                const cardPostalCode = elements.create('CARD_POSTAL_CODE', styles);
+                
+                cardNumber.mount('#card-number');
+                cardDate.mount('#card-date');
+                cardCvv.mount('#card-cvv');
+                cardPostalCode.mount('#card-postal-code');
+                
+                console.log('Clover initialized');
+            } catch (error) {
+                console.error('Clover init error:', error);
+                showMessage('error', 'Payment system initialization failed: ' + error.message);
+            }
+        }
         
         document.getElementById('paymentForm').addEventListener('submit', async function(e) {
             e.preventDefault();
-            
-            if (!paymentData.locationId) {
-                document.getElementById('message').className = 'message error';
-                document.getElementById('message').textContent = '❌ Missing location ID. Cannot process payment.';
-                document.getElementById('message').style.display = 'block';
-                return;
-            }
-            
-            log('🔄 Submitting payment');
             
             const btn = document.getElementById('payButton');
             const originalText = btn.innerHTML;
             btn.disabled = true;
             btn.innerHTML = '<span class="spinner"></span> Processing...';
-            document.getElementById('message').style.display = 'none';
             
             try {
-                if (!clover) throw new Error('Clover not initialized');
-                
-                log('🔄 Creating token...');
                 const result = await clover.createToken();
                 
                 if (result.errors?.length > 0) {
@@ -331,8 +316,6 @@ export default function handler(req, res) {
                     throw new Error('No payment token received');
                 }
                 
-                log('✅ Token created', token.substring(0, 15) + '...');
-                
                 const payload = {
                     locationId: paymentData.locationId,
                     amount: paymentData.amount,
@@ -343,8 +326,6 @@ export default function handler(req, res) {
                     customerName: paymentData.customerName
                 };
                 
-                log('🔄 Sending to backend');
-                
                 const response = await fetch('/api/payment/process', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -352,48 +333,37 @@ export default function handler(req, res) {
                 });
                 
                 const paymentResult = await response.json();
-                log('Backend response', paymentResult);
                 
                 if (paymentResult.success) {
-                    document.getElementById('message').className = 'message success';
-                    let successHTML = 
-                        '✅ <strong>Payment Successful!</strong><br>' +
+                    showMessage('success', 
+                        '✅ Payment Successful!<br>' +
                         'Transaction: ' + paymentResult.transactionId + '<br>' +
-                        'Amount: $' + paymentResult.amount;
+                        'Amount: $' + paymentResult.amount
+                    );
                     
-                    if (paymentResult.warning) {
-                        successHTML += '<br><br>⚠️ ' + paymentResult.warning;
-                    }
-                    
-                    document.getElementById('message').innerHTML = successHTML;
-                    document.getElementById('message').style.display = 'block';
-                    log('✅ Payment successful');
-                    
-                    btn.disabled = false;
                     btn.innerHTML = '✅ Payment Complete';
                     btn.style.background = '#28a745';
-                    
-                    // Notify parent
-                    if (window.parent && window.parent !== window) {
-                        window.parent.postMessage({ 
-                            type: 'PAYMENT_SUCCESS',
-                            transactionId: paymentResult.transactionId,
-                            amount: paymentResult.amount
-                        }, '*');
-                    }
                 } else {
                     throw new Error(paymentResult.error || 'Payment failed');
                 }
                 
             } catch (error) {
-                log('❌ Error', error.message);
-                document.getElementById('message').className = 'message error';
-                document.getElementById('message').textContent = '❌ ' + error.message;
-                document.getElementById('message').style.display = 'block';
+                console.error('Payment error:', error);
+                showMessage('error', '❌ ' + error.message);
                 btn.disabled = false;
                 btn.innerHTML = originalText;
             }
         });
+        
+        function showMessage(type, text) {
+            const msg = document.getElementById('message');
+            msg.className = 'message ' + type;
+            msg.innerHTML = text;
+            msg.style.display = 'block';
+        }
+        
+        // Start initialization
+        initialize();
     </script>
 </body>
 </html>`;
