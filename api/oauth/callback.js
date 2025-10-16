@@ -126,7 +126,7 @@ async function createPaymentIntegration(locationId, accessToken) {
     description: "Accept payments via Clover devices and online",
     imageUrl: "https://www.clover.com/assets/images/public-site/press/clover_logo_primary.png",
     queryUrl: `https://${baseUrl}/api/payment/query`,
-    paymentsUrl: `https://${baseUrl}/payment-form`,
+    paymentsUrl: `https://${baseUrl}/payment-form?locationId={{locationId}}&amount={{amount}}&invoiceId={{invoiceId}}&customerEmail={{customerEmail}}&customerName={{customerName}}`,
   };
 
   console.log("📤 Creating integration with payload:", JSON.stringify(payload, null, 2));
