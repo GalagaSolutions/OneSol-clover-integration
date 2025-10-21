@@ -117,11 +117,12 @@ async function storeLocationTokens(locationId, tokenData) {
 }
 
 async function createPaymentIntegration(locationId, accessToken) {
-  const baseUrl = process.env.CUSTOM_DOMAIN || 'clover-integration25.vercel.app';
+  const baseUrl = process.env.CUSTOM_DOMAIN || 'api.onesolutionapp.com';
   
-  const url = `https://services.leadconnectorhq.com/payments/custom-provider/provider?locationId=${locationId}`;
+  const url = `https://services.leadconnectorhq.com/payments/custom-provider/connect`;
   
   const payload = {
+    locationId: locationId,
     name: "Clover by PNC",
     description: "Accept payments via Clover devices and online",
     imageUrl: "https://www.clover.com/assets/images/public-site/press/clover_logo_primary.png",
