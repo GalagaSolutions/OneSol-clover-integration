@@ -1,6 +1,5 @@
 import { Redis } from "@upstash/redis";
 import { getLocationToken } from "../utils/getLocationToken.js";
-import axios from "axios";
 
 const redis = new Redis({
   url: process.env.storage_KV_REST_API_URL,
@@ -25,44 +24,29 @@ export default async function handler(req, res) {
     console.log("💾 Saving Clover configuration for location:", locationId);
     console.log("   Mode:", liveMode ? "LIVE" : "TEST");
 
- // Store Clover credentials in Redis
-await storeCloverCredentials(locationId, {
-  merchantId,
-  apiToken,
-  publicKey,
-  liveMode,
-  configuredAt: new Date().toISOString(),
-});
-
-// Get GHL access token (but don't update config - causes 422)
-try {
-  await getLocationToken(locationId);
-  console.log("✅ GHL access token verified for location:", locationId);
-} catch (error) {
-  console.log("⚠️ Could not verify GHL token:", error.message);
-}
-
-// ❌ SKIP THIS - causes 422 error
-// await updateGHLPaymentConfig(locationId, accessToken, {...})
-
-console.log("✅ Clover configuration saved!");
-console.log("💡 Integration should now work for payments");
-
-    // Get GHL access token
-    const accessToken = await getLocationToken(locationId);
-
-    // 🔥 THIS IS THE KEY PART - Call GHL's Connect Config API with correct format
-    await updateGHLPaymentConfig(locationId, accessToken, {
-      apiKey: apiToken,
-      publishableKey: publicKey || merchantId,
-      liveMode: liveMode
+    // Store Clover credentials in Redis
+    await storeCloverCredentials(locationId, {
+      merchantId,
+      apiToken,
+      publicKey,
+      liveMode,
+      configuredAt: new Date().toISOString(),
     });
 
-    console.log("✅ Clover configuration saved and GHL config updated!");
+    // Verify we can get the GHL access token (validates OAuth worked)
+    try {
+      await getLocationToken(locationId);
+      console.log("✅ GHL access token verified for location:", locationId);
+    } catch (error) {
+      console.log("⚠️ Could not verify GHL token:", error.message);
+    }
+
+    console.log("✅ Clover configuration saved successfully");
+    console.log("💡 Integration should now be ready for payments");
 
     return res.status(200).json({
       success: true,
-      message: "Clover configured successfully! You can now use it for payments.",
+      message: "Clover configuration saved successfully.",
     });
   } catch (error) {
     console.error("❌ Failed to save Clover config:", error);
@@ -77,43 +61,4 @@ async function storeCloverCredentials(locationId, credentials) {
   const key = `clover_config_${locationId}`;
   await redis.set(key, JSON.stringify(credentials));
   console.log(`✅ Clover credentials stored for location: ${locationId}`);
-}
-
-async function updateGHLPaymentConfig(locationId, accessToken, config) {
-  console.log("🔧 Updating GHL payment provider config");
-  console.log("   Mode:", config.liveMode ? "LIVE" : "TEST");
-  
-  // FIXED: locationId goes in URL query parameter, config nested under test/live
-  const connectUrl = `https://services.leadconnectorhq.com/payments/custom-provider/connect?locationId=${locationId}`;
-  
-  const modeKey = config.liveMode ? "live" : "test";
-  const payload = {
-    [modeKey]: {
-      apiKey: config.apiKey,
-      publishableKey: config.publishableKey
-    }
-  };
-
-  console.log("📤 URL:", connectUrl);
-  console.log("📤 Payload:", JSON.stringify(payload, null, 2));
-
-  try {
-    const response = await axios.post(connectUrl, payload, {
-      headers: {
-        "Authorization": `Bearer ${accessToken}`,
-        "Content-Type": "application/json",
-        "Version": "2021-07-28",
-      },
-    });
-
-    console.log("✅ GHL config updated successfully!");
-    console.log("   Response:", JSON.stringify(response.data));
-    
-  } catch (error) {
-    console.error("❌ GHL config update failed:");
-    console.error("   Status:", error.response?.status);
-    console.error("   Error:", JSON.stringify(error.response?.data));
-    
-    throw error;
-  }
 }
