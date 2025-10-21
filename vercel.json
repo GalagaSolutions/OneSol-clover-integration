@@ -1,12 +1,12 @@
 {
   "rewrites": [
     { "source": "/oauth/callback", "destination": "/api/oauth/callback" },
+    { "source": "/setup", "destination": "/api/setup" },
     { "source": "/pay/clover", "destination": "/api/pay/clover" },
     { "source": "/clover/charge", "destination": "/api/clover/charge" },
     { "source": "/payment-form", "destination": "/api/payment-form-simple" },
     { "source": "/api/payment/query", "destination": "/api/payment" },
-    { "source": "/payment/query", "destination": "/api/payment" },
     { "source": "/api/payment/process", "destination": "/api/payment" },
-    { "source": "/payment/process", "destination": "/api/payment" }
+    { "source": "/api/payment/iframe", "destination": "/api/payment" }
   ]
 }
