@@ -110,8 +110,9 @@ async function createPaymentIntegration(locationId, accessToken) {
   
   const createUrl = `https://services.leadconnectorhq.com/payments/integrations/provider/whitelabel`;
   
-  // ✅ FIX: Embed locationId directly in the URLs!
+  // ✅ Include locationId BOTH in the body AND in the URLs
   const payload = {
+    locationId: locationId,  // ✅ Add this - GHL needs it in the body too!
     name: "Clover by PNC",
     description: "Accept payments via Clover devices and online",
     imageUrl: "https://www.clover.com/assets/images/public-site/press/clover_logo_primary.png",
