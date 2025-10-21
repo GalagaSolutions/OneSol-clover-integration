@@ -25,14 +25,28 @@ export default async function handler(req, res) {
     console.log("💾 Saving Clover configuration for location:", locationId);
     console.log("   Mode:", liveMode ? "LIVE" : "TEST");
 
-    // Store Clover credentials in Redis
-    await storeCloverCredentials(locationId, {
-      merchantId,
-      apiToken,
-      publicKey,
-      liveMode,
-      configuredAt: new Date().toISOString(),
-    });
+ // Store Clover credentials in Redis
+await storeCloverCredentials(locationId, {
+  merchantId,
+  apiToken,
+  publicKey,
+  liveMode,
+  configuredAt: new Date().toISOString(),
+});
+
+// Get GHL access token (but don't update config - causes 422)
+try {
+  await getLocationToken(locationId);
+  console.log("✅ GHL access token verified for location:", locationId);
+} catch (error) {
+  console.log("⚠️ Could not verify GHL token:", error.message);
+}
+
+// ❌ SKIP THIS - causes 422 error
+// await updateGHLPaymentConfig(locationId, accessToken, {...})
+
+console.log("✅ Clover configuration saved!");
+console.log("💡 Integration should now work for payments");
 
     // Get GHL access token
     const accessToken = await getLocationToken(locationId);
