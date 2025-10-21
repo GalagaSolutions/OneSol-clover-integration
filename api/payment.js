@@ -34,16 +34,22 @@ export default async function handler(req, res) {
  * QUERY URL HANDLER - For GHL backend calls AND payment form URL generation
  */
 async function handleQueryURL(req, res) {
-  if (req.method !== "POST") {
+  // Handle both GET and POST requests
+  if (req.method !== "POST" && req.method !== "GET") {
     return res.status(405).json({ error: "Method not allowed" });
   }
 
   try {
     console.log("🔔 Query URL called from GHL");
-    console.log("📦 Payload:", JSON.stringify(req.body, null, 2));
+    console.log("   Method:", req.method);
+    console.log("   Query params:", req.query);
+    console.log("   Body:", req.body);
 
+    // For GET requests or POST without 'type', this is a payment URL request
+    const requestData = req.method === "GET" ? req.query : req.body;
+    
     const { 
-      type, 
+      type,
       apiKey,
       locationId,
       amount,
@@ -52,18 +58,21 @@ async function handleQueryURL(req, res) {
       altType,
       email,
       name,
-      customerId 
-    } = req.body;
+      customerId,
+      contactId
+    } = requestData;
 
-    // NEW: Handle payment form URL generation (no type field)
-    if (!type && locationId && amount) {
-      console.log("🔗 Generating payment form URL");
-      return handlePaymentFormURL(req.body, res);
+    // REQUEST TYPE 1: Generate payment form URL (no 'type' field)
+    // This is called when customer clicks "Pay Now" on invoice
+    if (!type && (locationId || invoiceId || altId) && amount) {
+      console.log("🔗 Payment form URL request");
+      return handlePaymentFormURL(requestData, res);
     }
 
-    // EXISTING: Handle backend API calls (with type field)
+    // REQUEST TYPE 2: Backend operations (has 'type' field)
+    // This requires API key authentication
     if (!apiKey) {
-      console.error("❌ Missing apiKey");
+      console.error("❌ Missing apiKey for backend operation");
       return res.status(401).json({ error: "Unauthorized - missing apiKey" });
     }
 
@@ -75,11 +84,12 @@ async function handleQueryURL(req, res) {
 
     console.log("✅ API key verified for location:", locationData.locationId);
 
+    // Route to appropriate handler based on type
     switch (type) {
       case "verify":
-        return await handleVerify(req.body, res);
+        return await handleVerify(requestData, res);
       case "refund":
-        return await handleRefund(req.body, locationData, res);
+        return await handleRefund(requestData, locationData, res);
       case "list_payment_methods":
         return res.status(200).json([]);
       case "charge_payment":
@@ -109,6 +119,8 @@ async function handleQueryURL(req, res) {
  * Called by GHL to get the payment form URL with proper parameters
  */
 async function handlePaymentFormURL(data, res) {
+  console.log("📋 Generating payment form URL");
+  
   const { 
     locationId, 
     amount, 
@@ -116,47 +128,67 @@ async function handlePaymentFormURL(data, res) {
     altId,
     altType,
     email,
-    name 
+    name,
+    contactId
   } = data;
 
+  // Validate required fields
   if (!locationId) {
     console.error("❌ Missing locationId");
-    return res.status(400).json({ error: "Missing locationId" });
+    return res.status(400).json({ 
+      success: false,
+      error: "Missing locationId" 
+    });
   }
 
-  if (!amount) {
+  if (!amount && amount !== 0) {
     console.error("❌ Missing amount");
-    return res.status(400).json({ error: "Missing amount" });
+    return res.status(400).json({ 
+      success: false,
+      error: "Missing amount" 
+    });
   }
 
-  // Use altId as invoiceId if provided (GHL sends invoice ID as altId)
-  const finalInvoiceId = invoiceId || altId;
+  // GHL sends invoice ID as altId when altType is 'invoice'
+  const finalInvoiceId = invoiceId || (altType === 'invoice' ? altId : null);
 
-  console.log("✅ Building payment form URL");
+  console.log("✅ Building payment URL:");
   console.log("   Location:", locationId);
   console.log("   Amount:", amount);
   console.log("   Invoice:", finalInvoiceId);
+  console.log("   Customer:", name || email);
 
-  // Build the payment form URL with actual values
-  const baseUrl = process.env.CUSTOM_DOMAIN || 'clover-integration25.vercel.app';
+  // Build the payment form URL
+  const baseUrl = process.env.CUSTOM_DOMAIN || 'api.onesolutionapp.com';
   
-  const params = new URLSearchParams({
-    locationId: locationId,
-    amount: (amount / 100).toFixed(2), // Convert cents to dollars
-    invoiceId: finalInvoiceId || '',
-    customerEmail: email || '',
-    customerName: name || ''
-  });
+  const params = new URLSearchParams();
+  params.set('locationId', locationId);
+  params.set('amount', typeof amount === 'number' ? (amount / 100).toFixed(2) : amount);
+  
+  if (finalInvoiceId) {
+    params.set('invoiceId', finalInvoiceId);
+  }
+  
+  if (email) {
+    params.set('customerEmail', email);
+  }
+  
+  if (name) {
+    params.set('customerName', name);
+  }
+  
+  if (contactId) {
+    params.set('contactId', contactId);
+  }
 
   const paymentUrl = `https://${baseUrl}/payment-form?${params.toString()}`;
 
-  console.log("🔗 Payment URL:", paymentUrl);
+  console.log("🔗 Payment URL generated:", paymentUrl);
 
-  // Return the payment form URL to GHL
+  // Return URL in the format GHL expects
   return res.status(200).json({
     success: true,
-    url: paymentUrl,
-    message: "Payment form URL generated"
+    url: paymentUrl
   });
 }
 
