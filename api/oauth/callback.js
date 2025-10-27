@@ -110,23 +110,18 @@ async function createPaymentIntegration(locationId, accessToken) {
   
   const createUrl = `https://services.leadconnectorhq.com/payments/integrations/provider/whitelabel`;
   
-  // ✅ Include ALL required fields from the error message
+  // ✅ ONLY the 6 fields GHL Support specified - no extra fields!
   const payload = {
-    locationId: locationId,
     name: "Clover by PNC",
     description: "Accept payments via Clover devices and online",
     imageUrl: "https://www.clover.com/assets/images/public-site/press/clover_logo_primary.png",
+    locationId: locationId,
     queryUrl: `https://api.onesolutionapp.com/api/payment/query?locationId=${locationId}`,
-    paymentsUrl: `https://api.onesolutionapp.com/payment-form?locationId=${locationId}`,
-    // NEW: Required fields that were missing
-    uniqueName: "clover_pnc",  // Unique identifier for your integration
-    title: "Clover by PNC",    // Display title
-    provider: "clover",         // Provider name (lowercase, no spaces)
-    altId: locationId,          // Alternative ID (using locationId)
-    altType: "location"         // Type of altId
+    paymentsUrl: `https://api.onesolutionapp.com/payment-form?locationId=${locationId}`
   };
 
-  console.log("📤 Creating integration with payload:", JSON.stringify(payload, null, 2));
+  console.log("📤 Creating integration with payload (GHL Support format):");
+  console.log(JSON.stringify(payload, null, 2));
 
   try {
     const response = await axios.post(createUrl, payload, {
