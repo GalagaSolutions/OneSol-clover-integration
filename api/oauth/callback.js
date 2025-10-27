@@ -108,9 +108,10 @@ async function storeLocationTokens(locationId, tokenData) {
 async function createPaymentIntegration(locationId, accessToken) {
   console.log("📤 Creating payment integration...");
   
-  const createUrl = `https://services.leadconnectorhq.com/payments/integrations/provider/whitelabel`;
+  // ✅ Use the correct endpoint from GHL documentation
+  const createUrl = `https://services.leadconnectorhq.com/payments/custom-provider/connect`;
   
-  // ✅ ONLY the 6 fields GHL Support specified - no extra fields!
+  // ✅ ONLY the 6 fields GHL Support specified
   const payload = {
     name: "Clover by PNC",
     description: "Accept payments via Clover devices and online",
@@ -120,7 +121,7 @@ async function createPaymentIntegration(locationId, accessToken) {
     paymentsUrl: `https://api.onesolutionapp.com/payment-form?locationId=${locationId}`
   };
 
-  console.log("📤 Creating integration with payload (GHL Support format):");
+  console.log("📤 Creating integration with payload:");
   console.log(JSON.stringify(payload, null, 2));
 
   try {
