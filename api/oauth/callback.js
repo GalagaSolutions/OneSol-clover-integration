@@ -108,21 +108,20 @@ async function storeLocationTokens(locationId, tokenData) {
 async function createPaymentIntegration(locationId, accessToken) {
   console.log("📤 Creating payment integration...");
   
-  // ✅ Use the correct endpoint from GHL documentation
-  const createUrl = `https://services.leadconnectorhq.com/payments/custom-provider/connect`;
+  // ✅ locationId goes as query parameter, not in body
+  const createUrl = `https://services.leadconnectorhq.com/payments/custom-provider/connect?locationId=${locationId}`;
   
-  // ✅ ONLY the 6 fields GHL Support specified
+  // ✅ Body has everything EXCEPT locationId
   const payload = {
     name: "Clover by PNC",
     description: "Accept payments via Clover devices and online",
     imageUrl: "https://www.clover.com/assets/images/public-site/press/clover_logo_primary.png",
-    locationId: locationId,
     queryUrl: `https://api.onesolutionapp.com/api/payment/query?locationId=${locationId}`,
     paymentsUrl: `https://api.onesolutionapp.com/payment-form?locationId=${locationId}`
   };
 
-  console.log("📤 Creating integration with payload:");
-  console.log(JSON.stringify(payload, null, 2));
+  console.log("📤 URL:", createUrl);
+  console.log("📤 Payload:", JSON.stringify(payload, null, 2));
 
   try {
     const response = await axios.post(createUrl, payload, {
