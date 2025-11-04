@@ -1,5 +1,5 @@
 import { Redis } from "@upstash/redis";
-import { getLocationToken } from "../utils/getLocationToken.js";
+import { getLocationToken } from "../lib/getLocationToken.js";
 import axios from "axios";
 
 const redis = new Redis({
