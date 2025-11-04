@@ -203,6 +203,8 @@ export async function refundCloverCharge(chargeId, amount = null) {
   }
 }
 
+// ADD THIS FUNCTION at the end of the file:
+
 export async function getCloverCharge(chargeId) {
   const apiToken = process.env.CLOVER_API_TOKEN;
   const isProduction = process.env.CLOVER_ENVIRONMENT === "production";
@@ -214,11 +216,16 @@ export async function getCloverCharge(chargeId) {
   try {
     const chargeUrl = `${baseUrl}/v1/charges/${chargeId}`;
 
+    console.log("🔍 Getting Clover charge:", chargeId);
+    console.log("   URL:", chargeUrl);
+
     const response = await axios.get(chargeUrl, {
       headers: {
         "Authorization": `Bearer ${apiToken}`,
       },
     });
+
+    console.log("✅ Charge retrieved:", response.data.id, "Status:", response.data.status);
 
     return {
       success: true,
