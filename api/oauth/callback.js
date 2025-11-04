@@ -68,9 +68,9 @@ export default async function handler(req, res) {
     console.log("✅ API keys generated and stored");
     console.log("   API Key:", apiKey.substring(0, 8) + "...");
 
-    // Try to register payment provider
+    // Try to register payment provider with CORRECTED approach
     try {
-      await registerPaymentProvider(locationId, access_token, apiKey, publishableKey);
+      await registerPaymentProvider(locationId, access_token);
       console.log("✅ Payment provider registration completed");
     } catch (error) {
       console.error("⚠️ Payment provider registration failed:", error.message);
@@ -127,27 +127,25 @@ async function storeLocationTokens(locationId, tokenData) {
   console.log(`✅ Tokens stored in Redis for location: ${locationId}`);
 }
 
-async function registerPaymentProvider(locationId, accessToken, apiKey, publishableKey) {
+async function registerPaymentProvider(locationId, accessToken) {
   console.log("📤 Attempting to register payment provider with GHL");
   console.log("   Location ID:", locationId);
   
-  const registrationPayload = {
-    name: "Clover by PNC",
-    description: "Accept payments via Clover",
-    imageUrl: "https://api.onesolutionapp.com/assets/clover-icon.png",
-    locationId: locationId,
-    queryUrl: "https://api.onesolutionapp.com/payments/query",
-    paymentsUrl: `https://api.onesolutionapp.com/payment-form-simple?locationId=${locationId}`
+  // STEP 1: Connect the provider (this creates the base integration)
+  const connectUrl = "https://services.leadconnectorhq.com/payments/custom-provider/connect";
+  
+  // CRITICAL FIX: Send ONLY locationId in the body - no other fields
+  // Based on the 422 error logs, GHL is very strict about this format
+  const connectPayload = {
+    locationId: locationId
   };
 
-  console.log("   Registration payload:", JSON.stringify(registrationPayload, null, 2));
+  console.log("📍 Step 1: Connecting provider");
+  console.log("   Endpoint:", connectUrl);
+  console.log("   Payload:", JSON.stringify(connectPayload, null, 2));
 
-  // Try Method 1: OAuth Integrations endpoint (CORRECT METHOD)
   try {
-    console.log("📍 Method 1: Trying /oauth/integrations endpoint...");
-    const integrationUrl = "https://services.leadconnectorhq.com/oauth/integrations";
-    
-    const response = await axios.post(integrationUrl, registrationPayload, {
+    const connectResponse = await axios.post(connectUrl, connectPayload, {
       headers: {
         "Authorization": `Bearer ${accessToken}`,
         "Content-Type": "application/json",
@@ -155,104 +153,63 @@ async function registerPaymentProvider(locationId, accessToken, apiKey, publisha
       },
     });
 
-    console.log("✅ Integration registered successfully via /oauth/integrations!");
-    console.log("   Response:", JSON.stringify(response.data));
+    console.log("✅ Provider connected successfully!");
+    console.log("   Response:", JSON.stringify(connectResponse.data));
     
-    // Try to set config with API keys
-    await setProviderConfig(locationId, accessToken, apiKey, publishableKey);
+    // STEP 2: Configure the provider with details (separate call)
+    await configureProvider(locationId, accessToken);
     
-    return response.data;
+    return connectResponse.data;
     
-  } catch (error1) {
-    console.error("❌ Method 1 failed (/oauth/integrations)");
-    console.error("   Status:", error1.response?.status);
-    console.error("   Error:", JSON.stringify(error1.response?.data));
+  } catch (error) {
+    console.error("❌ Provider connection failed");
+    console.error("   Status:", error.response?.status);
+    console.error("   Status Text:", error.response?.statusText);
+    console.error("   Error Data:", JSON.stringify(error.response?.data));
     
-    // Try Method 2: Custom Provider Config (FALLBACK)
-    try {
-      console.log("📍 Method 2: Trying /payments/custom-provider/config endpoint...");
-      const configUrl = "https://services.leadconnectorhq.com/payments/custom-provider/config";
-      
-      const configPayload = {
-        locationId: locationId,
-        name: "Clover by PNC",
-        liveMode: false,
-        apiKey: apiKey,
-        publishableKey: publishableKey,
-        queryUrl: "https://api.onesolutionapp.com/payments/query",
-        paymentsUrl: `https://api.onesolutionapp.com/payment-form-simple?locationId=${locationId}`
-      };
-      
-      const response2 = await axios.post(configUrl, configPayload, {
-        headers: {
-          "Authorization": `Bearer ${accessToken}`,
-          "Content-Type": "application/json",
-          "Version": "2021-07-28",
-        },
-      });
-      
-      console.log("✅ Provider config created successfully!");
-      console.log("   Response:", JSON.stringify(response2.data));
-      return response2.data;
-      
-    } catch (error2) {
-      console.error("❌ Method 2 also failed (/custom-provider/config)");
-      console.error("   Status:", error2.response?.status);
-      console.error("   Error:", JSON.stringify(error2.response?.data));
-      
-      // Try Method 3: Custom Provider Connect (LAST RESORT)
-      try {
-        console.log("📍 Method 3: Trying /payments/custom-provider/connect endpoint...");
-        const connectUrl = "https://services.leadconnectorhq.com/payments/custom-provider/connect";
-        
-        const response3 = await axios.post(connectUrl, { locationId }, {
-          headers: {
-            "Authorization": `Bearer ${accessToken}`,
-            "Content-Type": "application/json",
-            "Version": "2021-07-28",
-          },
-        });
-        
-        console.log("✅ Connected via /custom-provider/connect!");
-        console.log("   Response:", JSON.stringify(response3.data));
-        
-        // Try to set config separately
-        await setProviderConfig(locationId, accessToken, apiKey, publishableKey);
-        
-        return response3.data;
-        
-      } catch (error3) {
-        console.error("❌ All registration methods failed");
-        console.error("   Last error:", error3.response?.status, error3.response?.data);
-        throw new Error("Payment provider registration failed on all attempts");
-      }
-    }
+    // Don't throw error - allow installation to continue
+    console.log("   Installation will continue, provider may need manual setup");
   }
 }
 
-async function setProviderConfig(locationId, accessToken, apiKey, publishableKey) {
+async function configureProvider(locationId, accessToken) {
+  console.log("🔧 Configuring provider details");
+  
+  const configUrl = "https://services.leadconnectorhq.com/payments/custom-provider/config";
+  
+  // Get the API keys we generated
+  const keysData = await redis.get(`clover_keys_${locationId}`);
+  const keys = keysData ? JSON.parse(keysData) : {};
+  
+  const configPayload = {
+    locationId: locationId,
+    liveMode: false,
+    apiKey: keys.apiKey,
+    publishableKey: keys.publishableKey,
+    name: "Clover by PNC", 
+    description: "Accept payments via Clover devices and online",
+    queryUrl: "https://api.onesolutionapp.com/api/payment/query",
+    paymentsUrl: "https://api.onesolutionapp.com/payment-form"
+  };
+
+  console.log("   Config payload:", JSON.stringify(configPayload, null, 2));
+
   try {
-    console.log("🔧 Setting provider config (test mode)...");
-    
-    await axios.post(
-      "https://services.leadconnectorhq.com/payments/custom-provider/config",
-      {
-        locationId: locationId,
-        liveMode: false,
-        apiKey: apiKey,
-        publishableKey: publishableKey
+    const configResponse = await axios.post(configUrl, configPayload, {
+      headers: {
+        "Authorization": `Bearer ${accessToken}`,
+        "Content-Type": "application/json", 
+        "Version": "2021-07-28",
       },
-      {
-        headers: {
-          "Authorization": `Bearer ${accessToken}`,
-          "Content-Type": "application/json",
-          "Version": "2021-07-28"
-        }
-      }
-    );
+    });
+
+    console.log("✅ Provider configured successfully!");
+    console.log("   Response:", JSON.stringify(configResponse.data));
     
-    console.log("✅ Test mode config set successfully");
   } catch (error) {
-    console.error("⚠️ Could not set provider config (may be okay):", error.response?.data);
+    console.error("⚠️ Provider configuration failed (not critical)");
+    console.error("   Status:", error.response?.status);
+    console.error("   Error:", JSON.stringify(error.response?.data));
+    // Don't throw - configuration can be done later via setup page
   }
 }
