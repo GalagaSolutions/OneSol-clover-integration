@@ -52,7 +52,7 @@ export default async function handler(req, res) {
       installedAt: new Date().toISOString(),
     });
 
-    // Generate and store API keys
+    // Generate and store API keys (these will be used by GHL when calling our query endpoint)
     console.log("🔑 Generating API keys for location:", locationId);
     const crypto = await import('crypto');
     const apiKey = crypto.randomBytes(32).toString('hex');
@@ -67,27 +67,32 @@ export default async function handler(req, res) {
 
     console.log("✅ API keys generated and stored");
     console.log("   API Key:", apiKey.substring(0, 8) + "...");
+    console.log("   Publishable Key:", publishableKey.substring(0, 10) + "...");
 
-    // Try to register payment provider with CORRECTED approach
-    try {
-      await registerPaymentProvider(locationId, access_token);
-      console.log("✅ Payment provider registration completed");
-    } catch (error) {
-      console.error("⚠️ Payment provider registration failed:", error.message);
-      console.log("   Installation will continue, but may need manual setup");
-    }
+    // Store integration status for manual checking
+    await redis.set(`integration_status_${locationId}`, JSON.stringify({
+      status: "oauth_completed",
+      timestamp: Date.now(),
+      hasApiKeys: true,
+      hasTokens: true,
+      needsCloverConfig: true
+    }));
 
-    // Redirect back to GHL payments page
-    const redirectUrl = `https://app.gohighlevel.com/location/${locationId}/settings/payments`;
+    console.log("✅ Integration status stored");
+    console.log("💡 User needs to complete Clover setup in the next step");
+
+    // Redirect to setup page to collect Clover credentials
+    const setupUrl = `https://api.onesolutionapp.com/setup?locationId=${locationId}&companyId=${companyId}&status=oauth_success`;
     
-    console.log("🔄 Redirecting user to:", redirectUrl);
-    return res.redirect(302, redirectUrl);
+    console.log("🔄 Redirecting user to setup page:", setupUrl);
+    return res.redirect(302, setupUrl);
 
   } catch (error) {
     console.error("❌ OAuth callback error:", error.response?.data || error.message);
     
-    // Redirect to GHL with error
-    return res.redirect(302, "https://app.gohighlevel.com/oauth/error");
+    // Redirect to setup page with error
+    const errorUrl = `https://api.onesolutionapp.com/setup?error=${encodeURIComponent(error.message)}`;
+    return res.redirect(302, errorUrl);
   }
 }
 
@@ -125,91 +130,4 @@ async function storeLocationTokens(locationId, tokenData) {
   const key = `ghl_location_${locationId}`;
   await redis.set(key, JSON.stringify(tokenData));
   console.log(`✅ Tokens stored in Redis for location: ${locationId}`);
-}
-
-async function registerPaymentProvider(locationId, accessToken) {
-  console.log("📤 Attempting to register payment provider with GHL");
-  console.log("   Location ID:", locationId);
-  
-  // STEP 1: Connect the provider (this creates the base integration)
-  const connectUrl = "https://services.leadconnectorhq.com/payments/custom-provider/connect";
-  
-  // CRITICAL FIX: Send ONLY locationId in the body - no other fields
-  // Based on the 422 error logs, GHL is very strict about this format
-  const connectPayload = {
-    locationId: locationId
-  };
-
-  console.log("📍 Step 1: Connecting provider");
-  console.log("   Endpoint:", connectUrl);
-  console.log("   Payload:", JSON.stringify(connectPayload, null, 2));
-
-  try {
-    const connectResponse = await axios.post(connectUrl, connectPayload, {
-      headers: {
-        "Authorization": `Bearer ${accessToken}`,
-        "Content-Type": "application/json",
-        "Version": "2021-07-28",
-      },
-    });
-
-    console.log("✅ Provider connected successfully!");
-    console.log("   Response:", JSON.stringify(connectResponse.data));
-    
-    // STEP 2: Configure the provider with details (separate call)
-    await configureProvider(locationId, accessToken);
-    
-    return connectResponse.data;
-    
-  } catch (error) {
-    console.error("❌ Provider connection failed");
-    console.error("   Status:", error.response?.status);
-    console.error("   Status Text:", error.response?.statusText);
-    console.error("   Error Data:", JSON.stringify(error.response?.data));
-    
-    // Don't throw error - allow installation to continue
-    console.log("   Installation will continue, provider may need manual setup");
-  }
-}
-
-async function configureProvider(locationId, accessToken) {
-  console.log("🔧 Configuring provider details");
-  
-  const configUrl = "https://services.leadconnectorhq.com/payments/custom-provider/config";
-  
-  // Get the API keys we generated
-  const keysData = await redis.get(`clover_keys_${locationId}`);
-  const keys = keysData ? JSON.parse(keysData) : {};
-  
-  const configPayload = {
-    locationId: locationId,
-    liveMode: false,
-    apiKey: keys.apiKey,
-    publishableKey: keys.publishableKey,
-    name: "Clover by PNC", 
-    description: "Accept payments via Clover devices and online",
-    queryUrl: "https://api.onesolutionapp.com/api/payment/query",
-    paymentsUrl: "https://api.onesolutionapp.com/payment-form"
-  };
-
-  console.log("   Config payload:", JSON.stringify(configPayload, null, 2));
-
-  try {
-    const configResponse = await axios.post(configUrl, configPayload, {
-      headers: {
-        "Authorization": `Bearer ${accessToken}`,
-        "Content-Type": "application/json", 
-        "Version": "2021-07-28",
-      },
-    });
-
-    console.log("✅ Provider configured successfully!");
-    console.log("   Response:", JSON.stringify(configResponse.data));
-    
-  } catch (error) {
-    console.error("⚠️ Provider configuration failed (not critical)");
-    console.error("   Status:", error.response?.status);
-    console.error("   Error:", JSON.stringify(error.response?.data));
-    // Don't throw - configuration can be done later via setup page
-  }
 }

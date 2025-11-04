@@ -1,5 +1,6 @@
 import { Redis } from "@upstash/redis";
 import { getLocationToken } from "../utils/getLocationToken.js";
+import axios from "axios";
 
 const redis = new Redis({
   url: process.env.storage_KV_REST_API_URL,
@@ -33,20 +34,34 @@ export default async function handler(req, res) {
       configuredAt: new Date().toISOString(),
     });
 
-    // Verify we can get the GHL access token (validates OAuth worked)
+    // Get the GHL access token
+    let accessToken;
     try {
-      await getLocationToken(locationId);
+      accessToken = await getLocationToken(locationId);
       console.log("✅ GHL access token verified for location:", locationId);
     } catch (error) {
       console.log("⚠️ Could not verify GHL token:", error.message);
+      return res.status(200).json({
+        success: true,
+        message: "Clover configuration saved, but OAuth may need to be completed first.",
+        warning: "Complete app installation to enable full integration."
+      });
+    }
+
+    // Try to register/update the payment provider now that we have Clover config
+    try {
+      await registerPaymentProvider(locationId, accessToken);
+      console.log("✅ Payment provider registration completed");
+    } catch (error) {
+      console.error("⚠️ Payment provider registration failed:", error.message);
+      // Don't fail the config save - just warn the user
     }
 
     console.log("✅ Clover configuration saved successfully");
-    console.log("💡 Integration should now be ready for payments");
 
     return res.status(200).json({
       success: true,
-      message: "Clover configuration saved successfully.",
+      message: "Clover configuration saved successfully! Check Settings > Payments > Integrations in GHL.",
     });
   } catch (error) {
     console.error("❌ Failed to save Clover config:", error);
@@ -61,4 +76,60 @@ async function storeCloverCredentials(locationId, credentials) {
   const key = `clover_config_${locationId}`;
   await redis.set(key, JSON.stringify(credentials));
   console.log(`✅ Clover credentials stored for location: ${locationId}`);
+}
+
+async function registerPaymentProvider(locationId, accessToken) {
+  console.log("📤 Attempting payment provider registration via config save");
+  
+  // Get the API keys that were generated during OAuth
+  const keysData = await redis.get(`clover_keys_${locationId}`);
+  if (!keysData) {
+    console.log("⚠️ No API keys found - OAuth may not have completed");
+    return;
+  }
+  
+  const keys = JSON.parse(keysData);
+  
+  // Try to set the provider configuration
+  const configUrl = "https://services.leadconnectorhq.com/payments/custom-provider/config";
+  
+  const configPayload = {
+    locationId: locationId,
+    liveMode: false,
+    apiKey: keys.apiKey,
+    publishableKey: keys.publishableKey
+  };
+
+  console.log("🔧 Setting provider configuration");
+  console.log("   Config payload:", JSON.stringify(configPayload, null, 2));
+
+  try {
+    const configResponse = await axios.post(configUrl, configPayload, {
+      headers: {
+        "Authorization": `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
+        "Version": "2021-07-28",
+      },
+    });
+
+    console.log("✅ Provider configuration updated!");
+    console.log("   Response:", JSON.stringify(configResponse.data));
+    
+  } catch (error) {
+    console.error("❌ Provider configuration failed");
+    console.error("   Status:", error.response?.status);
+    console.error("   Error:", JSON.stringify(error.response?.data));
+    
+    // Try alternative approach - just ensure the integration status is marked
+    await redis.set(`integration_status_${locationId}`, JSON.stringify({
+      status: "clover_configured",
+      timestamp: Date.now(),
+      hasApiKeys: true,
+      hasTokens: true,
+      hasCloverConfig: true,
+      needsManualSetup: true
+    }));
+    
+    throw error;
+  }
 }
