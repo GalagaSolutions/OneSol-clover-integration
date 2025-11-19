@@ -1,4 +1,4 @@
-import { getLocationToken } from "../lib/getLocationToken.js";
+import { getLocationToken } from "../../lib/getLocationToken.js";
 import axios from "axios";
 import { Redis } from "@upstash/redis";
 
