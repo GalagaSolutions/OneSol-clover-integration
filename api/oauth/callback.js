@@ -19,11 +19,17 @@ export default async function handler(req, res) {
 
     // Exchange code for tokens
     const tokenData = await exchangeCodeForToken(code);
-    
+    console.log("🔍 FULL TOKEN RESPONSE:", JSON.stringify(tokenData, null, 2));
+    console.log("🔍 Looking for locationId in:", {
+  locationId: tokenData.locationId,
+  location_id: tokenData.location_id,
+  allKeys: Object.keys(tokenData)
+});
+
     // Extract location ID - try multiple possible locations in response
     const locationId = tokenData.locationId || tokenData.location_id;
     const companyId = tokenData.companyId || tokenData.company_id;
-    
+    console.log("🔍 EXTRACTED VALUES:", { locationId, companyId });
     if (!locationId) {
       console.error("❌ No locationId found in token response:", tokenData);
       throw new Error("locationId not found in OAuth response");
