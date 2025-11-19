@@ -69,14 +69,80 @@ export default async function handler(req, res) {
     console.log("   API Key:", apiKey.substring(0, 8) + "...");
     console.log("   Publishable Key:", publishableKey.substring(0, 10) + "...");
 
-    // Store integration status for manual checking
-    await redis.set(`integration_status_${locationId}`, JSON.stringify({
-      status: "oauth_completed",
-      timestamp: Date.now(),
-      hasApiKeys: true,
-      hasTokens: true,
-      needsCloverConfig: true
-    }));
+    // Register payment integration with GHL - THIS IS THE MISSING PIECE!
+    console.log("📤 Registering payment integration with GHL...");
+    try {
+      const baseUrl = process.env.CUSTOM_DOMAIN || 'api.onesolutionapp.com';
+      
+      const integrationUrl = "https://services.leadconnectorhq.com/oauth/integrations";
+      const integrationPayload = {
+        name: "Clover by PNC",
+        description: "Accept payments via Clover devices and online",
+        locationId: locationId,
+        queryUrl: `https://${baseUrl}/payments/query`,
+        paymentsUrl: `https://${baseUrl}/payment-iframe`
+      };
+
+      console.log("📤 Integration payload:", JSON.stringify(integrationPayload, null, 2));
+
+      const integrationResponse = await axios.post(integrationUrl, integrationPayload, {
+        headers: {
+          "Authorization": `Bearer ${access_token}`,
+          "Content-Type": "application/json",
+          "Version": "2021-07-28",
+        },
+      });
+
+      console.log("✅ Payment integration registered!");
+      console.log("   Response:", JSON.stringify(integrationResponse.data, null, 2));
+
+      // Set provider configuration with API keys
+      const configUrl = "https://services.leadconnectorhq.com/payments/custom-provider/config";
+      const configPayload = {
+        locationId: locationId,
+        liveMode: false,
+        apiKey: apiKey,
+        publishableKey: publishableKey
+      };
+
+      const configResponse = await axios.post(configUrl, configPayload, {
+        headers: {
+          "Authorization": `Bearer ${access_token}`,
+          "Content-Type": "application/json",
+          "Version": "2021-07-28",
+        },
+      });
+
+      console.log("✅ Provider config set!");
+      console.log("   Response:", JSON.stringify(configResponse.data, null, 2));
+
+      // Store successful integration status
+      await redis.set(`integration_status_${locationId}`, JSON.stringify({
+        status: "integration_registered",
+        timestamp: Date.now(),
+        hasApiKeys: true,
+        hasTokens: true,
+        integrationRegistered: true,
+        configSet: true
+      }));
+
+    } catch (error) {
+      console.error("⚠️ Integration registration failed:", error.response?.data || error.message);
+      console.error("   Status:", error.response?.status);
+      
+      // Store failed status but continue - user can configure manually
+      await redis.set(`integration_status_${locationId}`, JSON.stringify({
+        status: "integration_failed",
+        timestamp: Date.now(),
+        hasApiKeys: true,
+        hasTokens: true,
+        integrationRegistered: false,
+        error: error.response?.data || error.message,
+        needsManualSetup: true
+      }));
+      
+      console.log("⚠️ Integration registration failed but continuing...");
+    }
 
     console.log("✅ Integration status stored");
     console.log("💡 User needs to complete Clover setup in the next step");
