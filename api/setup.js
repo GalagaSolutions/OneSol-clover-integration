@@ -1,4 +1,26 @@
 export default function handler(req, res) {
+  const setupBuild = process.env.VERCEL_GIT_COMMIT_SHA
+    ? `setup-${process.env.VERCEL_GIT_COMMIT_SHA.slice(0, 7)}`
+    : "setup-local-debug-v1";
+
+  const normalizeId = (value) => {
+    if (!value) return null;
+    const trimmed = String(value).trim();
+    if (!trimmed || trimmed.includes("{{") || trimmed.includes("}}") || trimmed === "undefined" || trimmed === "null") {
+      return null;
+    }
+    return trimmed;
+  };
+
+  const findFirstHeader = (...keys) => {
+    for (const key of keys) {
+      const value = req.headers?.[key];
+      const normalized = normalizeId(Array.isArray(value) ? value[0] : value);
+      if (normalized) return normalized;
+    }
+    return null;
+  };
+
   // Clover connection test
   if (req.query.test === "clover") {
     const merchantId = process.env.CLOVER_MERCHANT_ID;
@@ -10,6 +32,33 @@ export default function handler(req, res) {
       merchantId: merchantId ? `${merchantId.substring(0, 4)}...` : "NOT SET",
       hasApiToken: !!apiToken,
       environment: environment || "NOT SET",
+    });
+  }
+
+  const queryLocationId = normalizeId(req.query.locationId || req.query.location_id || req.query.subAccountId || req.query.location);
+  const headerLocationId = findFirstHeader(
+    "x-ghl-location-id",
+    "x-location-id",
+    "x-lc-location-id",
+    "x-sub-account-id",
+    "locationid"
+  );
+  const defaultLocationId = queryLocationId || headerLocationId || normalizeId(process.env.GHL_DEFAULT_LOCATION_ID) || "cv3mmKLIVdqbZSVeksCW";
+  const initialError = req.query.error || "";
+
+  res.setHeader("X-Clover-Setup-Build", setupBuild);
+
+  // Canary endpoint: verifies which deployment is serving /setup
+  if (req.query.ping === "1") {
+    return res.status(200).json({
+      ok: true,
+      setupBuild,
+      host: req.headers?.host || null,
+      queryLocationId,
+      headerLocationId,
+      defaultLocationId,
+      hasDefaultLocationEnv: !!normalizeId(process.env.GHL_DEFAULT_LOCATION_ID),
+      now: new Date().toISOString(),
     });
   }
 
@@ -139,6 +188,12 @@ export default function handler(req, res) {
             color: #721c24;
             border: 1px solid #f5c6cb;
         }
+
+        .message.info {
+            background: #e7f1ff;
+            color: #084298;
+            border: 1px solid #b6d4fe;
+        }
         
         .help-text {
             font-size: 12px;
@@ -163,6 +218,7 @@ export default function handler(req, res) {
     <div class="container">
         <h1>Clover Setup</h1>
         <p class="subtitle">Connect your Clover payment processor</p>
+        <p id="buildInfo" class="help-text" style="text-align:center; display:none; margin-bottom: 16px;"></p>
         
         <form id="setupForm">
             <div class="mode-toggle">
@@ -194,25 +250,140 @@ export default function handler(req, res) {
     </div>
     
     <script>
-        // Simple locationId extraction
-        const urlParams = new URLSearchParams(window.location.search);
-        let locationId = urlParams.get('locationId') || urlParams.get('location_id');
-        const companyId = urlParams.get('companyId') || urlParams.get('company_id');
-        
-        // If not in URL, try to get from parent (for iframe)
-        if (!locationId && window.location !== window.parent.location) {
+        const defaultLocationId = '${defaultLocationId}';
+        const setupBuild = '${setupBuild}';
+        const initialLocationId = '${defaultLocationId}';
+        const installError = '${String(initialError).replace(/'/g, "\\'")}';
+
+        function isPlaceholderValue(value) {
+            if (!value || typeof value !== 'string') return false;
+            return value.includes('{{') || value.includes('}}') || value === 'undefined' || value === 'null';
+        }
+
+        function cleanId(value) {
+            if (!value) return null;
+            const trimmed = String(value).trim();
+            if (!trimmed || isPlaceholderValue(trimmed)) return null;
+            return trimmed;
+        }
+
+        function parseFromSearch(search) {
+            const params = new URLSearchParams(search || '');
+            return {
+                locationId: cleanId(
+                    params.get('locationId') ||
+                    params.get('location_id') ||
+                    params.get('location') ||
+                    params.get('subAccountId') ||
+                    params.get('sub_account_id') ||
+                    params.get('id')
+                ),
+                companyId: cleanId(params.get('companyId') || params.get('company_id') || params.get('company'))
+            };
+        }
+
+        function parseFromHash(hash) {
+            if (!hash) return {};
+            const hashValue = hash.startsWith('#') ? hash.slice(1) : hash;
+            return parseFromSearch(hashValue);
+        }
+
+        function parseFromUrl(url) {
             try {
-                const parentUrl = window.parent.location.href;
-                const match = parentUrl.match(/\\/location\\/([a-zA-Z0-9_-]+)/);
-                if (match) locationId = match[1];
-            } catch (e) {
-                console.log('Cannot access parent URL');
+                const parsed = new URL(url);
+                const searchValues = parseFromSearch(parsed.search);
+                const hashValues = parseFromHash(parsed.hash);
+
+                if (!searchValues.locationId || !searchValues.companyId) {
+                    const locationPathMatch = parsed.pathname.match(/\/location\/([a-zA-Z0-9_-]+)/i);
+                    if (locationPathMatch && !searchValues.locationId) {
+                        searchValues.locationId = locationPathMatch[1];
+                    }
+                }
+
+                return {
+                    locationId: searchValues.locationId || hashValues.locationId,
+                    companyId: searchValues.companyId || hashValues.companyId
+                };
+            } catch (error) {
+                return {};
             }
         }
-        
-        console.log('Setup loaded - LocationId:', locationId);
-        
+
+        function resolveContext() {
+            const context = {
+                locationId: null,
+                companyId: null,
+                source: 'none'
+            };
+
+            const currentUrlData = parseFromUrl(window.location.href);
+            if (currentUrlData.locationId || currentUrlData.companyId) {
+                context.locationId = currentUrlData.locationId || context.locationId;
+                context.companyId = currentUrlData.companyId || context.companyId;
+                context.source = 'window.location';
+            }
+
+            if ((!context.locationId || !context.companyId) && document.referrer) {
+                const referrerData = parseFromUrl(document.referrer);
+                context.locationId = context.locationId || referrerData.locationId;
+                context.companyId = context.companyId || referrerData.companyId;
+                if (referrerData.locationId || referrerData.companyId) {
+                    context.source = 'document.referrer';
+                }
+            }
+
+            if ((!context.locationId || !context.companyId) && window.parent && window.parent !== window) {
+                try {
+                    const parentData = parseFromUrl(window.parent.location.href);
+                    context.locationId = context.locationId || parentData.locationId;
+                    context.companyId = context.companyId || parentData.companyId;
+                    if (parentData.locationId || parentData.companyId) {
+                        context.source = 'parent.location';
+                    }
+                } catch (error) {
+                    console.log('Cannot access parent location (cross-origin):', error.message);
+                }
+            }
+
+            if (!context.locationId && cleanId(defaultLocationId)) {
+                context.locationId = cleanId(defaultLocationId);
+                context.source = 'default-fallback';
+            }
+
+            return context;
+        }
+
+        const resolvedContext = resolveContext();
+        let locationId = resolvedContext.locationId || cleanId(initialLocationId);
+        let companyId = resolvedContext.companyId;
+
+        console.log('Setup context resolved:', {
+            locationId,
+            companyId,
+            source: resolvedContext.source
+        });
+
         let currentMode = 'test';
+
+        window.addEventListener('message', function(event) {
+            const data = event && event.data ? event.data : {};
+            const messageLocationId = cleanId(data.locationId || data.location_id || data.subAccountId);
+            const messageCompanyId = cleanId(data.companyId || data.company_id);
+
+            if (messageLocationId && !locationId) {
+                locationId = messageLocationId;
+                showMessage('info', 'Detected location from embedded app context. You can continue setup.');
+            }
+
+            if (messageCompanyId && !companyId) {
+                companyId = messageCompanyId;
+            }
+        });
+
+        if (window.parent && window.parent !== window) {
+            window.parent.postMessage({ type: 'REQUEST_GHL_CONTEXT' }, '*');
+        }
         
         // Mode toggle
         document.querySelectorAll('.mode-btn').forEach(btn => {
@@ -228,7 +399,11 @@ export default function handler(req, res) {
             e.preventDefault();
             
             if (!locationId) {
-                showMessage('error', 'Missing location ID. Please access from GHL or add ?locationId=YOUR_ID to URL');
+                locationId = cleanId(defaultLocationId);
+            }
+
+            if (!locationId) {
+                showMessage('error', 'Missing location ID. Please open from GHL App Marketplace install flow or add ?locationId=YOUR_ID to URL.');
                 return;
             }
             
@@ -279,23 +454,38 @@ export default function handler(req, res) {
         
         function showMessage(type, text) {
             const messageDiv = document.getElementById('message');
-            messageDiv.className = \`message \${type}\`;
+            messageDiv.className = "message " + type;
             messageDiv.textContent = text;
             messageDiv.style.display = 'block';
             
-            if (type === 'success') {
+            if (type === 'success' || type === 'info') {
                 setTimeout(() => messageDiv.style.display = 'none', 5000);
             }
         }
         
-        // Show warning if no locationId
+        if (installError) {
+            showMessage('error', 'OAuth/install warning: ' + decodeURIComponent(installError));
+        }
+
+        const debugEnabled = new URLSearchParams(window.location.search).get('debug') === '1';
+        if (debugEnabled) {
+            const buildInfo = document.getElementById('buildInfo');
+            buildInfo.textContent = 'Build: ' + setupBuild;
+            buildInfo.style.display = 'block';
+        }
+
         if (!locationId) {
-            showMessage('error', 'No location ID found. Access this page from GHL integration settings.');
+            showMessage('error', 'No location ID found in URL/context. Trying embedded context. If this persists, set GHL_DEFAULT_LOCATION_ID in Vercel.');
+        } else if (!resolvedContext.locationId || resolvedContext.source === 'default-fallback') {
+            showMessage('info', 'Using configured default location for setup: ' + locationId);
         }
     </script>
 </body>
 </html>`;
 
+  res.setHeader('Content-Type', 'text/html');
+  res.status(200).send(html);
+}
   res.setHeader('Content-Type', 'text/html');
   res.status(200).send(html);
 }
