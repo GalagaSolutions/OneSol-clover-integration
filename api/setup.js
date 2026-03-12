@@ -295,7 +295,7 @@ export default function handler(req, res) {
                 const hashValues = parseFromHash(parsed.hash);
 
                 if (!searchValues.locationId || !searchValues.companyId) {
-                    const locationPathMatch = parsed.pathname.match(/\/location\/([a-zA-Z0-9_-]+)/i);
+                    const locationPathMatch = parsed.pathname.match(/\\/location\\/([a-zA-Z0-9_-]+)/i);
                     if (locationPathMatch && !searchValues.locationId) {
                         searchValues.locationId = locationPathMatch[1];
                     }
@@ -468,9 +468,18 @@ export default function handler(req, res) {
                 setTimeout(() => messageDiv.style.display = 'none', 5000);
             }
         }
+
+        function safeDecodeURIComponent(value) {
+            try {
+                return decodeURIComponent(value);
+            } catch (error) {
+                console.warn('Could not decode installError, showing raw value instead:', error.message);
+                return value;
+            }
+        }
         
         if (installError) {
-            showMessage('error', 'OAuth/install warning: ' + decodeURIComponent(installError));
+            showMessage('error', 'OAuth/install warning: ' + safeDecodeURIComponent(installError));
         }
 
         const debugEnabled = new URLSearchParams(window.location.search).get('debug') === '1';
