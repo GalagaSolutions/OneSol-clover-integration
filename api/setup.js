@@ -427,8 +427,16 @@ export default function handler(req, res) {
                     body: JSON.stringify(config)
                 });
                 
-                const result = await response.json();
-                
+                const responseText = await response.text();
+                let result;
+                try {
+                    result = responseText ? JSON.parse(responseText) : {};
+                } catch (parseError) {
+                    const preview = responseText.slice(0, 120).replace(/\s+/g, ' ');
+                    showMessage('error', 'Setup endpoint returned non-JSON response: ' + preview);
+                    return;
+                }
+
                 if (response.ok && result.success) {
                     if (result.warning) {
                         showMessage('info', result.warning);
