@@ -430,16 +430,22 @@ export default function handler(req, res) {
                 const result = await response.json();
                 
                 if (response.ok && result.success) {
-                    showMessage('success', result.message || '✓ Configuration saved successfully!');
+                    if (result.warning) {
+                        showMessage('info', result.warning);
+                    } else {
+                        showMessage('success', result.message || '✓ Configuration saved successfully!');
+                    }
                     
                     // Clear sensitive fields
                     document.getElementById('apiToken').value = '';
-                    
-                    setTimeout(() => {
-                        if (window.parent && window.parent !== window) {
-                            window.parent.postMessage({ type: 'SETUP_COMPLETE' }, '*');
-                        }
-                    }, 2000);
+
+                    if (result.providerConfigured !== false) {
+                        setTimeout(() => {
+                            if (window.parent && window.parent !== window) {
+                                window.parent.postMessage({ type: 'SETUP_COMPLETE' }, '*');
+                            }
+                        }, 2000);
+                    }
                 } else {
                     showMessage('error', result.error || 'Failed to save configuration');
                 }
