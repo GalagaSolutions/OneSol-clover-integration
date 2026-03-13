@@ -10,6 +10,15 @@ export default async function handler(req, res) {
   try {
     const { code } = req.query;
 
+    const cleanId = (value) => {
+      if (!value) return null;
+      const trimmed = String(value).trim();
+      if (!trimmed || trimmed.includes("{{") || trimmed.includes("}}") || trimmed === "undefined" || trimmed === "null") {
+        return null;
+      }
+      return trimmed;
+    };
+
     if (!code) {
       console.error("❌ No authorization code provided");
       return res.status(400).send("Missing authorization code");
@@ -28,9 +37,26 @@ export default async function handler(req, res) {
       allKeys: Object.keys(tokenData)
     });
     
-    // Extract location ID - try multiple possible locations in response
-    const locationId = tokenData.locationId || tokenData.location_id;
-    const companyId = tokenData.companyId || tokenData.company_id;
+    // Extract location/company IDs from token response + query fallback
+    const locationId = cleanId(
+      tokenData.locationId ||
+      tokenData.location_id ||
+      tokenData.location?.id ||
+      tokenData.location?.locationId ||
+      tokenData.user?.locationId ||
+      req.query.locationId ||
+      req.query.location_id ||
+      req.query.subAccountId
+    );
+
+    const companyId = cleanId(
+      tokenData.companyId ||
+      tokenData.company_id ||
+      tokenData.company?.id ||
+      tokenData.user?.companyId ||
+      req.query.companyId ||
+      req.query.company_id
+    );
     
     console.log("🔍 EXTRACTED VALUES:", { locationId, companyId });
     
@@ -107,8 +133,10 @@ export default async function handler(req, res) {
     console.error("   Error stack:", error.stack);
     console.error("   Full error:", error);
     
-    // Redirect to setup page with error
-    const errorUrl = `https://api.onesolutionapp.com/setup?error=${encodeURIComponent(error.message)}`;
+    // Redirect to setup page with error and preserve any known context
+    const fallbackLocationId = encodeURIComponent(req.query.locationId || req.query.location_id || req.query.subAccountId || "");
+    const fallbackCompanyId = encodeURIComponent(req.query.companyId || req.query.company_id || "");
+    const errorUrl = `https://api.onesolutionapp.com/setup?error=${encodeURIComponent(error.message)}${fallbackLocationId ? `&locationId=${fallbackLocationId}` : ""}${fallbackCompanyId ? `&companyId=${fallbackCompanyId}` : ""}`;
     return res.redirect(302, errorUrl);
   }
 }
