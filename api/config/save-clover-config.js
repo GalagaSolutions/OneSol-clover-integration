@@ -144,7 +144,7 @@ async function storeCloverCredentials(locationId, credentials) {
 
 async function registerPaymentProvider(locationId, accessToken, liveMode) {
   console.log("📤 Attempting payment provider registration via config save");
-
+  
   let keysData;
   try {
     keysData = await redis.get(`clover_keys_${locationId}`);
@@ -163,16 +163,21 @@ async function registerPaymentProvider(locationId, accessToken, liveMode) {
 
   let keys;
   try {
-    keys = JSON.parse(keysData);
+    keys = typeof keysData === "string" ? JSON.parse(keysData) : keysData;
+
+    if (!keys || typeof keys !== "object") {
+      throw new Error("Stored Clover OAuth key payload is not an object");
+    }
   } catch (error) {
     throw withStage(error, "redis_parse_oauth_keys", {
       locationId,
-      hint: "Stored Clover OAuth key payload is not valid JSON.",
+      valueType: typeof keysData,
+      hint: "Stored Clover OAuth key payload is not valid JSON/object.",
     });
   }
 
   const configUrl = "https://services.leadconnectorhq.com/payments/custom-provider/config";
-
+  
   const configPayload = {
     locationId,
     liveMode: !!liveMode,
