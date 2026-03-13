@@ -203,7 +203,7 @@ async function registerPaymentProvider(locationId, accessToken, liveMode) {
         publishableKey: keys.publishableKey,
       },
     },
-      {
+    {
       name: "custom-provider/provider",
       url: `https://services.leadconnectorhq.com/payments/custom-provider/provider?locationId=${locationId}`,
       payload: {
