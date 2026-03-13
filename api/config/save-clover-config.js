@@ -203,10 +203,11 @@ async function registerPaymentProvider(locationId, accessToken, liveMode) {
         publishableKey: keys.publishableKey,
       },
     },
-    {
+      {
       name: "custom-provider/provider",
       url: `https://services.leadconnectorhq.com/payments/custom-provider/provider?locationId=${locationId}`,
       payload: {
+        locationId,
         name: "Clover by PNC",
         description: "Accept payments via Clover devices and online",
         queryUrl: "https://api.onesolutionapp.com/api/payment/query",
